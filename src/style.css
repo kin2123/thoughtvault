@@ -1,0 +1,311 @@
+/* =========================================================
+   设计令牌
+   排版与间距决定 65% 的观感，所以先把这两层定死再用。
+   ========================================================= */
+
+:root {
+  /* 间距：4px 基准栅格 */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+
+  /* 圆角 */
+  --r-sm: 6px;
+  --r-md: 9px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+  --radius: var(--r-lg);
+
+  /* 字号：1.22 比例，正文加大到 14.5 保证可读 */
+  --content-size: 14.5px;
+  --ui-size: 13px;
+  --caption: 11.5px;
+
+  /* ---- 深色：靠明度分层，不靠阴影 ---- */
+  --bg: #101014;
+  --surface: #17171d;
+  --surface-2: #1e1e26;
+  --surface-3: #26262f;
+  --border: #2e2e3a;
+  --border-soft: #23232c;
+
+  --text: #ececf2;
+  --text-strong: #e6e6ee;
+  --text-dim: #a8a8ba;
+  --text-faint: #86869b;
+
+  --accent: #8b7cf8;
+  --accent-soft: rgba(139, 124, 248, 0.16);
+  --accent-line: #4b3f8a;
+  --accent-text: #c2baff;
+
+  --danger: #ef6b66;
+  --pinned-from: #1c1a2b;
+  --pinned-border: #3a3560;
+
+  --mask: rgba(8, 8, 12, 0.72);
+  --toast-bg: #26262f;
+  --toast-border: #3a3a47;
+  --scroll: #33333f;
+  --scroll-hover: #45455a;
+  --focus: rgba(139, 124, 248, 0.55);
+  --sel: rgba(139, 124, 248, 0.28);
+}
+
+/* ---- 浅色：干净纸面感，边框轻、对比足 ---- */
+:root[data-theme='light'] {
+  --bg: #f4f4f7;
+  --surface: #ffffff;
+  --surface-2: #eeeef4;
+  --surface-3: #e4e4ec;
+  --border: #d8d8e3;
+  --border-soft: #e6e6ef;
+
+  --text: #16161c;
+  --text-strong: #26262f;
+  --text-dim: #4e4e60;
+  --text-faint: #63637a;
+
+  --accent: #6250d8;
+  --accent-soft: rgba(98, 80, 216, 0.1);
+  --accent-line: #b7aef0;
+  --accent-text: #4f3fc4;
+
+  --danger: #cc3b36;
+  --pinned-from: #f6f4ff;
+  --pinned-border: #d5cdf7;
+
+  --mask: rgba(24, 24, 32, 0.4);
+  --toast-bg: #ffffff;
+  --toast-border: #dfdfe8;
+  --scroll: #d2d2de;
+  --scroll-hover: #bcbcca;
+  --focus: rgba(98, 80, 216, 0.45);
+  --sel: rgba(98, 80, 216, 0.18);
+}
+
+:root[data-size='s'] {
+  --content-size: 13.5px;
+  --ui-size: 12.5px;
+  --caption: 11px;
+}
+
+:root[data-size='l'] {
+  --content-size: 16px;
+  --ui-size: 14px;
+  --caption: 12.5px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, 'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei',
+    sans-serif;
+  font-size: var(--ui-size);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+  user-select: none;
+}
+
+::selection {
+  background: var(--sel);
+}
+
+input,
+textarea,
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  outline: none;
+}
+
+textarea,
+input {
+  user-select: text;
+}
+
+/* 键盘操作时才显示焦点环，鼠标点击不显示 */
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+::-webkit-scrollbar {
+  width: 11px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scroll);
+  border-radius: 6px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-hover);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* =========================================================
+   Markdown 渲染（v-html 内容，需要全局样式）
+   ========================================================= */
+
+.md-body {
+  font-size: var(--content-size);
+  line-height: 1.68;
+  color: var(--text-strong);
+  word-break: break-word;
+}
+
+.md-body > *:first-child {
+  margin-top: 0;
+}
+
+.md-body > *:last-child {
+  margin-bottom: 0;
+}
+
+.md-body p {
+  margin: 0 0 0.55em;
+}
+
+.md-body h1,
+.md-body h2,
+.md-body h3,
+.md-body h4 {
+  margin: 1em 0 0.4em;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.md-body h1 {
+  font-size: 1.34em;
+}
+
+.md-body h2 {
+  font-size: 1.18em;
+}
+
+.md-body h3 {
+  font-size: 1.06em;
+}
+
+.md-body ul,
+.md-body ol {
+  margin: 0 0 0.55em;
+  padding-left: 1.3em;
+}
+
+.md-body li {
+  margin: 0.15em 0;
+}
+
+.md-body li > p {
+  margin: 0;
+}
+
+.md-body a {
+  color: var(--accent-text);
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-line);
+}
+
+.md-body a:hover {
+  color: var(--accent);
+}
+
+.md-body code {
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 0.89em;
+  padding: 0.14em 0.4em;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.md-body pre {
+  margin: 0 0 0.6em;
+  padding: var(--s3);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  overflow-x: auto;
+}
+
+.md-body pre code {
+  padding: 0;
+  background: none;
+  font-size: 0.87em;
+  line-height: 1.6;
+  white-space: pre;
+}
+
+.md-body blockquote {
+  margin: 0 0 0.6em;
+  padding: 0.15em 0 0.15em 0.9em;
+  border-left: 2px solid var(--accent-line);
+  color: var(--text-dim);
+}
+
+.md-body hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1em 0;
+}
+
+.md-body table {
+  border-collapse: collapse;
+  margin-bottom: 0.6em;
+  font-size: 0.95em;
+}
+
+.md-body th,
+.md-body td {
+  border: 1px solid var(--border);
+  padding: var(--s1) var(--s2);
+  text-align: left;
+}
+
+.md-body th {
+  background: var(--surface-2);
+  font-weight: 600;
+}
+
+.md-body img {
+  max-width: 100%;
+  border-radius: var(--r-md);
+  display: block;
+  margin: var(--s2) 0;
+}
+
+.md-body input[type='checkbox'] {
+  margin-right: var(--s1);
+  accent-color: var(--accent);
+}

@@ -1,0 +1,81 @@
+{
+  "name": "thoughtvault",
+  "productName": "思库",
+  "version": "0.9.1",
+  "private": true,
+  "description": "本地优先的轻量速记工具",
+  "main": "electron/main.js",
+  "author": "kin2123",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "app": "vite build && electron .",
+    "dev:app": "node scripts/dev-app.mjs",
+    "smoke": "vite build && electron scripts/smoke.js",
+    "test:db": "electron scripts/test-db.js",
+    "test:groups": "electron scripts/test-groups.js",
+    "test:paging": "electron scripts/test-paging.js",
+    "test:batch": "electron scripts/test-batch.js",
+    "test:datadir": "electron scripts/test-datadir.js",
+    "test:edge": "electron scripts/test-edge.js",
+    "test:edge2": "electron scripts/test-edge2.js",
+    "shots": "electron scripts/shots.js",
+    "bench": "electron scripts/bench.js",
+    "bench:ui": "electron scripts/bench-ui.js",
+    "icon": "python scripts/gen-icon.py",
+    "dist": "vite build && electron-builder --win"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "markdown-it": "^15.0.3",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "vite": "^6.0.5"
+  },
+  "build": {
+    "appId": "com.kin2123.thoughtvault",
+    "productName": "思库",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "build/icon.png",
+      "!node_modules/**",
+      "node_modules/better-sqlite3/package.json",
+      "node_modules/better-sqlite3/lib/**",
+      "node_modules/better-sqlite3/build/Release/*.node",
+      "node_modules/bindings/**",
+      "node_modules/file-uri-to-path/**"
+    ],
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/build/Release/*.node"
+    ],
+    "electronLanguages": [
+      "zh-CN",
+      "en-US"
+    ],
+    "compression": "maximum",
+    "npmRebuild": false,
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "思库"
+    }
+  }
+}
