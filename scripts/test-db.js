@@ -92,7 +92,52 @@ app.whenReady().then(() => {
   const bak = db.backupTo(path.join(tmp, 'backups'))
   check('备份生成 .db 文件', bak.ok && fs.existsSync(bak.path) && fs.statSync(bak.path).size > 0)
 
-  check('完整性检查', db.integrityCheck() === 'ok', db.integrityCheck())
+  /* 批量清理：换成 IN 子查询后必须验证三张表都不留孤儿 */
+  // 单独开一个连接去数 tags / notes_fts 的真实行数。
+  // 不能用 listTags() 验证，它 JOIN 了 notes，孤儿行在那儿是看不见的。
+  const BS = require('better-sqlite3')
+  const probe = () => {
+    const d = new BS(require('../electron/paths').notesDb())
+    const r = {
+      tags: d.prepare('SELECT COUNT(*) c FROM tags').get().c,
+      fts: d.prepare('SELECT COUNT(*) c FROM notes_fts').get().c
+    }
+    d.close()
+    return r
+  }
+  const count = (n) => {
+    const r = []
+    for (let i = 0; i < n; i++) r.push(db.createNote({ content: `批量第 ${i} 条 #批量${i % 5}` }).id)
+    return r
+  }
+
+  const beforeEmpty = probe()
+  db.batchSoftDelete(count(50))
+  const removed = db.emptyTrash()
+  const afterEmpty = probe()
+  check('emptyTrash 返回清除条数', removed === 50, `removed=${removed}`)
+  check('emptyTrash 后无孤儿标签', afterEmpty.tags === beforeEmpty.tags, `tags ${beforeEmpty.tags}->${afterEmpty.tags}`)
+  check('emptyTrash 后无孤儿 FTS 行', afterEmpty.fts === beforeEmpty.fts, `fts ${beforeEmpty.fts}->${afterEmpty.fts}`)
+
+  const beforePurge = probe()
+  db.batchSoftDelete(count(30))
+  // ttl 取负数让 cutoff 必定落在 deleted_at 之后，
+  // 否则同一毫秒内 deleted_at < cutoff 不成立，测试会随机失败
+  const purged = db.purgeExpired(-1)
+  const afterPurge = probe()
+  check('purgeExpired 返回清除条数', purged === 30, `purged=${purged}`)
+  check('purgeExpired 后无孤儿标签', afterPurge.tags === beforePurge.tags, `tags ${beforePurge.tags}->${afterPurge.tags}`)
+  check('purgeExpired 后无孤儿 FTS 行', afterPurge.fts === beforePurge.fts, `fts ${beforePurge.fts}->${afterPurge.fts}`)
+
+  // 空库时 SUM() 返回 NULL，getStats 必须兜成 0
+  db.batchSoftDelete(db.listNotes({}).map((n) => n.id))
+  db.emptyTrash()
+  const emptyStats = db.getStats()
+  check('空库 getStats 返回 0 而非 null', emptyStats.active === 0 && emptyStats.trash === 0, JSON.stringify(emptyStats))
+
+  // 完整校验留着（搬迁时用），启动路径改走快速校验，两个都要断言
+  check('完整性检查', db.integrityCheck() === 'ok')
+  check('快速检查', db.quickCheck() === 'ok', db.quickCheck())
 
   const failed = results.filter((r) => !r.ok)
   console.log(`\n合计 ${results.length} 项，通过 ${results.length - failed.length}，失败 ${failed.length}`)

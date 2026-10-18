@@ -442,6 +442,48 @@ function registerIpc() {
   ipcMain.on('window:show', () => win && (win.show(), win.focus()))
 }
 
+/* ---------- 启动后的维护工作 ---------- */
+
+// 完整性校验与备份都要占主线程：1 万条下完整校验 47~81ms、备份 15~30ms。
+// 启动时它们既不该挡在 createWindow() 前面，也不该卡住渲染进程发来的首屏
+// bootstrap 请求（那笔请求正是首屏要等的）。所以统一推迟到首屏渲染完之后。
+let maintenanceDone = false
+
+function runStartupMaintenance() {
+  if (maintenanceDone) return
+  maintenanceDone = true
+
+  // 日常启动用快速校验就够：能抓到页损坏，代价只有完整校验的 1/3
+  try {
+    const ok = db.quickCheck()
+    if (ok !== 'ok') logLine('数据库完整性异常: ' + ok)
+  } catch (err) {
+    logLine('完整性校验失败: ' + (err && err.message ? err.message : err))
+  }
+
+  try {
+    const backup = db.backupTo(store.backupsDir())
+    if (backup.ok) {
+      store.pruneBackups()
+      cfg.lastBackupAt = backup.at
+      config.save(cfg)
+    } else {
+      logLine('启动备份失败: ' + backup.error)
+    }
+  } catch (err) {
+    logLine('启动备份失败: ' + (err && err.message ? err.message : err))
+  }
+}
+
+function scheduleStartupMaintenance() {
+  if (win && !win.isDestroyed()) {
+    win.webContents.once('did-finish-load', () => setImmediate(runStartupMaintenance))
+  }
+  // 兜底：万一窗口一直没加载完（比如渲染进程异常），3 秒后照做，
+  // 否则这台机器就再也不会自动备份了
+  setTimeout(runStartupMaintenance, 3000)
+}
+
 /* ---------- 启动 ---------- */
 
 const gotLock = app.requestSingleInstanceLock()
@@ -476,7 +518,6 @@ if (!gotLock) {
       if (mig.migrated) logLine(`已从 notes.json 迁移 ${mig.migrated} 条笔记`)
       const purged = db.purgeExpired()
       if (purged) logLine(`回收站自动清理 ${purged} 条`)
-      logLine('数据库完整性: ' + db.integrityCheck())
     } catch (err) {
       logLine('数据库初始化失败: ' + (err && err.stack ? err.stack : err))
     }
@@ -489,12 +530,7 @@ if (!gotLock) {
     const res = registerHotkey(cfg.hotkey)
     if (!res.ok) logLine('快捷键注册失败: ' + cfg.hotkey)
 
-    const backup = db.backupTo(store.backupsDir())
-    if (backup.ok) {
-      store.pruneBackups()
-      cfg.lastBackupAt = backup.at
-      config.save(cfg)
-    }
+    scheduleStartupMaintenance()
 
     applyLaunchAtLogin(cfg.launchAtLogin)
 

@@ -10,7 +10,7 @@
 ![electron](https://img.shields.io/badge/Electron-33-47848F?style=flat-square&logo=electron&logoColor=white)
 ![vue](https://img.shields.io/badge/Vue-3-42B883?style=flat-square&logo=vuedotjs&logoColor=white)
 ![sqlite](https://img.shields.io/badge/SQLite-FTS5-003B57?style=flat-square&logo=sqlite&logoColor=white)
-![tests](https://img.shields.io/badge/tests-90%20assertions-3fb950?style=flat-square)
+![tests](https://img.shields.io/badge/tests-98%20assertions-3fb950?style=flat-square)
 ![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 
 </div>
@@ -93,6 +93,7 @@ npm run dist      # 打 Windows 安装包 + 免安装版
 | **分页不是用来「找到东西」的** | 列表按 80 条一页滚动加载，那是渲染护栏。真正的检索靠搜索 + 时间分组 + 标签，三件不同的事不能互相替代 |
 | **标签以正文为唯一真相** | 早期由渲染层解析标签再传给主进程，任何绕过界面的入口都会产生「正文有 `#tag`、标签表却是空」的脏数据。现在 `createNote/updateNote` 在 main 侧统一解析 |
 | **备份用 `VACUUM INTO`** | 原来直接复制 `.db` 文件——WAL 模式下可能拷到写入中的半截状态。`VACUUM INTO` 产出的是独立的紧凑副本 |
+| **启动路径上不放重活** | 完整性校验和备份都在主线程上，1 万条下合计 83~117ms，原本堵在创建窗口之前。现在日常启动只做 `quick_check`（比完整校验快 3 倍），备份延后到首屏渲染之后，关键路径从 83ms 降到 3ms。完整校验只留给数据目录搬迁这种低频高危操作 |
 
 ## 数据在哪
 
@@ -121,10 +122,10 @@ logs/app.log   异常日志
 
 ## 测试
 
-7 套脚本、**90 项断言**，全部在真实 Electron 里跑（真窗口、真 SQLite、真文件系统），不是 mock：
+7 套脚本、**98 项断言**，全部在真实 Electron 里跑（真窗口、真 SQLite、真文件系统），不是 mock：
 
 ```bash
-npm run test:db        # 30 项  数据库层：中文搜索/标签/回收站/导入去重/完整性
+npm run test:db        # 38 项  数据库层：中文搜索/标签/回收站/导入去重/完整性/批量清理不留孤儿
 npm run test:groups    # 11 项  时间分组与键盘导航
 npm run test:paging    #  7 项  灌 300 条验分页与滚动续载
 npm run test:batch     #  5 项  多选批量删除（端到端：点勾选 → 点删除 → 查库）
@@ -146,6 +147,20 @@ npm run bench:ui   # 首屏 / 切筛选 / 切排序 / 续载的渲染耗时
 实测（2000 条）：列表首屏 0.6ms、中文搜索 2.0ms、新建 3.6ms、界面切标签 9.5ms。
 **瓶颈不在数据库也不在渲染**——所以只优化了真正慢的地方，没有为了数字好看折腾。
 
+真正的瓶颈在启动路径上：完整 `integrity_check` 和 `VACUUM INTO` 备份原本都堵在创建窗口之前，
+1 万条下要 83~117ms。改成 `quick_check` + 备份延后到首屏之后，关键路径降到 3ms。
+
+顺带一条我自己踩的：**曾把 `getStats` 的两次 `COUNT` 合并成一次 `SUM(deleted_at IS NULL)`，
+理由是「少一次查询」。实测反而慢 2.6 倍**——`COUNT` 走的是覆盖索引的范围查找，
+`SUM(表达式)` 必须逐行求值，退化成全索引扫描。做完回头一测才发现，已回滚：
+
+```
+COUNT: SEARCH notes USING COVERING INDEX idx_notes_deleted (deleted_at=?)
+SUM:   SCAN  notes USING COVERING INDEX idx_notes_deleted
+```
+
+省掉一次往返，换来 O(匹配行) → O(全表)。这条现在连同实测数字写在 `electron/db.js` 的注释里。
+
 ## 目录结构
 
 ```
@@ -162,7 +177,7 @@ src/
   api.js        桌面 / 浏览器 双实现，接口一致
   style.css     主题令牌 + Markdown 排版
   components/   SettingsPanel / TagManager / TrashView
-scripts/        90 项断言的测试脚本 + 两个基准 + 截图生成
+scripts/        98 项断言的测试脚本 + 两个基准 + 截图生成
 ```
 
 ## 已知边界

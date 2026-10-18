@@ -340,6 +340,9 @@ let draftTimer = null
 let searchTimer = null
 let toastTimer = null
 let mediaQuery = null
+// 滚动续载的两个闸门，见 onListScroll
+let loadingMore = false
+let scrollRafPending = false
 
 /* ---------- 生命周期 ---------- */
 
@@ -455,15 +458,30 @@ async function refreshAll() {
 
 function resetPaging() {
   limit.value = PAGE_SIZE
+  // 换搜索词/换标签时要把闸门一起松开，否则上一次的在途标记会挡住新查询
+  loadingMore = false
 }
 
+// 滚动续载要挡住两件事：
+// ① refreshList 是异步的，await 期间同一个位置会继续收到 scroll 事件，
+//    每次加 80 会让 limit 一次跳到 240、400，然后触发一次超大的重渲染；
+// ② 读 scrollTop / clientHeight / scrollHeight 会强制布局刷新，
+//    不节流的话每个 scroll 事件都来一次。
 function onListScroll(e) {
+  if (!hasMore.value || loadingMore || scrollRafPending) return
   const el = e.target
-  if (!hasMore.value) return
-  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120) {
+  scrollRafPending = true
+  requestAnimationFrame(() => {
+    scrollRafPending = false
+    // 进 rAF 后重新判一次，期间状态可能已经变了
+    if (loadingMore || !hasMore.value) return
+    if (el.scrollTop + el.clientHeight < el.scrollHeight - 120) return
+    loadingMore = true
     limit.value += PAGE_SIZE
-    refreshList()
-  }
+    refreshList().finally(() => {
+      loadingMore = false
+    })
+  })
 }
 
 /* ---------- 时间分组 ---------- */
