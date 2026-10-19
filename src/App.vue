@@ -448,7 +448,7 @@ async function toggleTheme() {
 }
 
 watch(
-  () => [config.value.theme, config.value.fontSize],
+  () => [config.value.theme, config.value.fontSize, config.value.accent, config.value.density],
   () => applyAppearance()
 )
 
