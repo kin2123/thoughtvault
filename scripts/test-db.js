@@ -137,6 +137,23 @@ app.whenReady().then(() => {
   check('丢掉的是最旧的 4 份', !kept.some((b) => /notes-2020010[0-3]/.test(b.name)), kept.map((b) => b.name).join(','))
   check('最新一份仍是刚做的真实备份', kept[0].name === bak.name, kept[0].name + ' vs ' + bak.name)
 
+  /* VACUUM 会重排 rowid，必须同时重建 FTS，否则搜索会串行 */
+  const vacNote = db.createNote({ content: '压缩测试专用笔记 #vac' })
+  const sizeBefore = fs.statSync(db.dbFile()).size
+  const vac = db.vacuum()
+  check('vacuum 返回压缩前后大小', vac.ok && vac.before === sizeBefore, `${vac.before} -> ${vac.after}`)
+  check('vacuum 后仍能搜到笔记', db.listNotes({ query: '压缩测试' }).length === 1)
+  db.updateNote(vacNote.id, { content: '压缩之后改过的内容 #vac2' })
+  check(
+    'vacuum 后更新不会串行',
+    db.listNotes({ query: '压缩之后' }).length === 1 && db.listNotes({ query: '压缩测试' }).length === 0
+  )
+  check(
+    'vacuum 后旧标签被换掉',
+    db.listNotes({ tag: 'vac' }).length === 0 && db.listNotes({ tag: 'vac2' }).length === 1
+  )
+  db.purge(vacNote.id)
+
   /* 批量清理：换成 IN 子查询后必须验证三张表都不留孤儿 */
   // 单独开一个连接去数 tags / notes_fts 的真实行数。
   // 不能用 listTags() 验证，它 JOIN 了 notes，孤儿行在那儿是看不见的。

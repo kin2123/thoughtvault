@@ -637,6 +637,22 @@ function optimizeFts() {
 }
 
 /**
+ * 压缩数据库文件，回收彻底删除后留下的空闲页。
+ *
+ * ⚠️ VACUUM 会重排 notes 的 rowid（这张表没有 INTEGER PRIMARY KEY），
+ * 而 FTS 行是用 notes.rowid 定位的，所以**必须紧跟 rebuildFts()**，
+ * 否则笔记与搜索索引的对应关系会整体错位。这两步不能拆开调用。
+ */
+function vacuum() {
+  const before = fs.statSync(dbFile()).size
+  db.exec('VACUUM')
+  rebuildFts()
+  db.pragma('wal_checkpoint(TRUNCATE)')
+  const after = fs.statSync(dbFile()).size
+  return { ok: true, before, after }
+}
+
+/**
  * 一次 IPC 拿齐首屏需要的数据，省掉多次往返。
  *
  * withTags=false 时跳过 listTags：标签只在写操作后才会变，
@@ -714,6 +730,7 @@ module.exports = {
   backupTo,
   optimizeFts,
   rebuildFts,
+  vacuum,
   bootstrap,
   integrityCheck,
   quickCheck,

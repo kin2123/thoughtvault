@@ -266,6 +266,20 @@ function createTray() {
           logLine(res.ok ? '手动备份: ' + res.name : '手动备份失败: ' + res.error)
         }
       },
+      {
+        // 彻底删除后空闲页不会自动归还给系统，库文件只增不减；这是手动回收入口
+        label: '压缩数据库',
+        click: () => {
+          if (!db.isOpen()) return
+          try {
+            const r = db.vacuum()
+            const mb = (n) => (n / 1048576).toFixed(1) + 'MB'
+            logLine(`压缩数据库: ${mb(r.before)} -> ${mb(r.after)}`)
+          } catch (err) {
+            logLine('压缩数据库失败: ' + (err && err.message ? err.message : err))
+          }
+        }
+      },
       { label: '打开数据目录', click: () => shell.openPath(store.userDir()) },
       { type: 'separator' },
       {
