@@ -65,6 +65,10 @@ app.whenReady().then(() => {
   time('列表全量 LIMIT 500', () => db.listNotes({ limit: 500 }))
   time('中文搜索「学习」', () => db.listNotes({ query: '学习', limit: 80 }))
   time('标签统计 listTags', () => db.listTags())
+  // 首屏两条路径：搜索/滚动续载走 withTags:false，只有写操作后才重算标签。
+  // 2000 条时两者差别不到 1ms，5 万条时差 25ms（listTags 实测 25.58ms）。
+  time('bootstrap（含标签）', () => db.bootstrap({ limit: 80 }))
+  time('bootstrap（不含标签）', () => db.bootstrap({ limit: 80, withTags: false }))
   time('计数 getStats', () => db.getStats())
   time('回收站 listTrash', () => db.listTrash())
   time('按创建时间排序', () => db.listNotes({ sort: 'created', limit: 80 }))

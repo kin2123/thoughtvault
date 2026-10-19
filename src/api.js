@@ -282,12 +282,14 @@ export async function saveAsset(buffer, ext = 'png') {
   }
 }
 
-/** 一次拿齐首屏数据：列表 + 标签 + 计数 */
+/** 一次拿齐首屏数据：列表 + 标签 + 计数；withTags=false 时跳过标签统计 */
 export async function bootstrapNotes(opts = {}) {
   if (native) return native.bootstrap(opts)
-  const list = await listNotes(opts)
-  const [tags, stats] = await Promise.all([listTags(), getStats()])
-  return { list, tags, stats }
+  const { withTags = true, ...listOpts } = opts
+  const list = await listNotes(listOpts)
+  const stats = await getStats()
+  if (!withTags) return { list, stats }
+  return { list, tags: await listTags(), stats }
 }
 
 /* =========================================================

@@ -575,13 +575,18 @@ function optimizeFts() {
   }
 }
 
-/** 一次 IPC 拿齐首屏需要的数据，省掉多次往返 */
+/**
+ * 一次 IPC 拿齐首屏需要的数据，省掉多次往返。
+ *
+ * withTags=false 时跳过 listTags：标签只在写操作后才会变，
+ * 搜索和滚动续载时重算纯属浪费，而它是唯一随数据量线性增长的查询
+ * （实测 5 万条 25.6ms，占首屏 bootstrap 的 99%）。
+ */
 function bootstrap(opts = {}) {
-  return {
-    list: listNotes(opts),
-    tags: listTags(),
-    stats: getStats()
-  }
+  const { withTags = true, ...listOpts } = opts
+  const res = { list: listNotes(listOpts), stats: getStats() }
+  if (withTags) res.tags = listTags()
+  return res
 }
 
 /**

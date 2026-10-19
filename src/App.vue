@@ -425,16 +425,18 @@ async function dismissOnboarding() {
 
 /* ---------- 数据刷新 ---------- */
 
-async function refreshList() {
+async function refreshList({ withTags = true } = {}) {
   // 一次 IPC 拿齐列表 + 标签 + 计数，省掉三次往返
   const res = await bootstrapNotes({
     query: query.value,
     tag: activeTag.value,
     sort: config.value.sort || 'updated',
-    limit: limit.value
+    limit: limit.value,
+    withTags
   })
   items.value = res.list
-  tagList.value = res.tags
+  // 跳过标签统计时不要把已有的标签列表覆盖成 undefined
+  if (res.tags) tagList.value = res.tags
   stats.value = res.stats
   hasMore.value = res.list.length >= limit.value
 }
@@ -478,7 +480,8 @@ function onListScroll(e) {
     if (el.scrollTop + el.clientHeight < el.scrollHeight - 120) return
     loadingMore = true
     limit.value += PAGE_SIZE
-    refreshList().finally(() => {
+    // 续载只影响列表，标签统计没必要跟着重算
+    refreshList({ withTags: false }).finally(() => {
       loadingMore = false
     })
   })
@@ -646,7 +649,8 @@ watch(query, () => {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(() => {
     resetPaging()
-    refreshList()
+    // 搜索不改变标签集合，每次按键都重算 listTags 是纯浪费
+    refreshList({ withTags: false })
   }, 220)
 })
 
@@ -835,7 +839,7 @@ function onEditKey(e) {
 function pickTag(name) {
   activeTag.value = name
   resetPaging()
-  refreshList()
+  refreshList({ withTags: false })
 }
 
 const SORTS = ['updated', 'created', 'length']
@@ -848,7 +852,7 @@ async function cycleSort() {
   config.value = { ...config.value, sort: next }
   await setConfig({ sort: next })
   resetPaging()
-  await refreshList()
+  await refreshList({ withTags: false })
   showToast('排序：' + SORT_LABELS[next])
 }
 
@@ -925,7 +929,7 @@ async function doRemoveTag(name) {
 
 function backToList() {
   view.value = 'list'
-  refreshList()
+  refreshList({ withTags: false })
 }
 
 function toggleTrash() {
@@ -964,7 +968,7 @@ async function patchConfig(patch) {
   config.value = { ...config.value, ...(await setConfig(patch)) }
   if ('sort' in patch) {
     resetPaging()
-    refreshList()
+    refreshList({ withTags: false })
   }
 }
 
