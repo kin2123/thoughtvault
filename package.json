@@ -65,6 +65,7 @@
     ],
     "compression": "maximum",
     "npmRebuild": false,
+    "afterPack": "scripts/after-pack.js",
     "win": {
       "target": [
         "nsis",

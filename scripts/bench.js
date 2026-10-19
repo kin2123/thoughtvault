@@ -20,6 +20,27 @@ function time(label, fn) {
   return { r, ms }
 }
 
+// 统一出口。原来 app.quit() 写在最后一行，中间任何一步抛异常都到不了，
+// 于是 Electron 进程就永远挂着（实测挂了 40 分钟、3 个进程 160MB 没人管）。
+// 用 app.exit 而不是 quit：不等窗口关闭，直接结束。
+let finished = false
+function finish(code) {
+  if (finished) return
+  finished = true
+  try {
+    fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 3 })
+  } catch (_) {}
+  app.exit(code)
+}
+
+// 注册在 whenReady 之前，否则在它注册之前抛的错照样挂死
+const bail = (err) => {
+  console.error('基准中断: ' + (err && err.stack ? err.stack : err))
+  finish(1)
+}
+process.on('uncaughtException', bail)
+process.on('unhandledRejection', bail)
+
 app.whenReady().then(() => {
   const db = require('../electron/db')
   db.open()
@@ -74,9 +95,5 @@ app.whenReady().then(() => {
   const dbSize = fs.statSync(db.dbFile()).size
   console.log('notes.db:', (dbSize / 1024 / 1024).toFixed(2), 'MB')
 
-  db.close()
-  try {
-    fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 3 })
-  } catch (_) {}
-  app.quit()
+  finish(0)
 })
