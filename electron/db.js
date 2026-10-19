@@ -8,6 +8,38 @@ let db = null
 
 const SCHEMA_VERSION = 1
 
+/**
+ * 迁移阶梯：每一项负责把库从下标版本升到下标 + 1，按顺序执行。
+ *   0 → 1：初始 schema，建表语句就在 open() 里，这里留空。
+ * 以后加字段/加表时往数组末尾追加一项，**不要修改已发布的项**。
+ */
+const MIGRATIONS = [
+  () => {} // 0 → 1
+]
+
+function schemaVersion() {
+  return db.pragma('user_version', { simple: true })
+}
+
+/**
+ * 只在「库比程序旧」时才写 user_version。
+ *
+ * 原来的写法是每次 open 都无条件写一遍，这会在两种情况下把版本信息弄坏：
+ *   ① 用户装回旧版本，旧程序把新库的版本号改小 → 下次升级时迁移重跑；
+ *   ② 将来有人加了 v2 的迁移，降级再升级就会对着已经迁移过的表再跑一遍。
+ */
+function migrate() {
+  const from = schemaVersion()
+  if (from > SCHEMA_VERSION) {
+    // 库比程序新（降级安装）：保持原样，不要覆写
+    console.warn('[db] 数据库版本 ' + from + ' 高于程序支持的 ' + SCHEMA_VERSION + '，跳过迁移')
+    return
+  }
+  if (from === SCHEMA_VERSION) return
+  for (let v = from; v < SCHEMA_VERSION; v++) MIGRATIONS[v]()
+  db.pragma('user_version = ' + SCHEMA_VERSION)
+}
+
 /* ---------- 中文分词 ---------- */
 // FTS5 的 unicode61 会把连续汉字当成一个 token，导致搜「学习」搜不到「今天学习」。
 // 做法：写入和查询时都在每个汉字前后插空格，让每个字独立成 token，查询用短语匹配。
@@ -80,7 +112,7 @@ function open() {
       tokenize = 'unicode61 remove_diacritics 2'
     );
   `)
-  db.pragma('user_version = ' + SCHEMA_VERSION)
+  migrate()
   return db
 }
 
@@ -595,5 +627,6 @@ module.exports = {
   bootstrap,
   integrityCheck,
   quickCheck,
+  schemaVersion,
   explain
 }

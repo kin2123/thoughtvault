@@ -135,6 +135,25 @@ app.whenReady().then(() => {
   const emptyStats = db.getStats()
   check('空库 getStats 返回 0 而非 null', emptyStats.active === 0 && emptyStats.trash === 0, JSON.stringify(emptyStats))
 
+  /* schema 版本：只在「库比程序旧」时迁移并写版本，降级不能覆写 */
+  check('新建库的 user_version 是 1', db.schemaVersion() === 1, 'v=' + db.schemaVersion())
+
+  const BS2 = require('better-sqlite3')
+  const setUserVersion = (v) => {
+    db.close()
+    const d = new BS2(require('../electron/paths').notesDb())
+    d.pragma('user_version = ' + v)
+    d.close()
+    db.open()
+  }
+
+  setUserVersion(0)
+  check('user_version=0 时自动迁移到 1', db.schemaVersion() === 1, 'v=' + db.schemaVersion())
+
+  setUserVersion(9)
+  check('库版本高于程序时不覆写', db.schemaVersion() === 9, 'v=' + db.schemaVersion())
+  setUserVersion(1) // 复原，别影响后面的断言
+
   // 完整校验留着（搬迁时用），启动路径改走快速校验，两个都要断言
   check('完整性检查', db.integrityCheck() === 'ok')
   check('快速检查', db.quickCheck() === 'ok', db.quickCheck())
