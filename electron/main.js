@@ -20,6 +20,7 @@ const { createRelocator } = require('./relocate')
 const assets = require('./assets')
 const nav = require('./nav')
 const { createLogger } = require('./logger')
+const { createReloadGate } = require('./recovery')
 
 // 必须在 app ready 之前注册，否则自定义协议拿不到安全上下文
 assets.registerScheme()
@@ -33,6 +34,8 @@ let cfg = null
 let activeHotkey = null
 let suppressBlurHide = false
 let boundsTimer = null
+// 渲染进程崩溃后的自动重载闸门：60 秒内最多两次
+const canReloadRenderer = createReloadGate()
 // 数据库没打开时的原因。渲染层据此显示错误态，而不是「还没有任何记录」
 let dbError = null
 
@@ -207,6 +210,16 @@ function createWindow() {
 
   win.webContents.on('render-process-gone', (_e, details) => {
     logLine('render-process-gone: ' + JSON.stringify(details))
+    if (details.reason === 'clean-exit') return
+    if (!canReloadRenderer(Date.now())) {
+      // 连续崩就停手，别把机器拖进无限重载
+      logLine('渲染进程连续崩溃，停止自动重载')
+      return
+    }
+    logLine('自动重载渲染进程')
+    setTimeout(() => {
+      if (win && !win.isDestroyed()) win.reload()
+    }, 300)
   })
 }
 
