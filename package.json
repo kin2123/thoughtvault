@@ -28,6 +28,7 @@
     "bench": "electron scripts/bench.js",
     "bench:ui": "electron scripts/bench-ui.js",
     "icon": "python scripts/gen-icon.py",
+    "scan:assets": "electron scripts/scan-assets.js",
     "dist": "vite build && electron-builder --win"
   },
   "dependencies": {

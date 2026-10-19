@@ -122,7 +122,7 @@ logs/app.log   异常日志
 
 ## 测试
 
-11 套脚本，全部在真实 Electron 里跑（真窗口、真 SQLite、真文件系统），不是 mock。
+12 套脚本，全部在真实 Electron 里跑（真窗口、真 SQLite、真文件系统），不是 mock。
 其中 4 套是纯数据/纯逻辑，无头环境也能跑：
 
 ```bash
@@ -134,6 +134,7 @@ npm run test:datadir     # 17 项  数据目录搬迁：复制/切换/取消/回
 npm run test:nav         # 20 项  导航边界：外链白名单，javascript:/data:/file: 一律挡掉
 npm run test:consistency #  6 项  标签正则与版本号不许在多处漂移
 npm run test:logger      #  9 项  日志轮转：超 2MB 只留一份 app.log.1
+npm run test:assets-scan # 11 项  图片孤儿扫描的纯逻辑（引用提取 / 孤儿判定）
 npm run test:groups      # 11 项  时间分组与键盘导航
 npm run test:paging      #  7 项  灌 300 条验分页与滚动续载
 npm run test:batch       #  5 项  多选批量删除（端到端：点勾选 → 点删除 → 查库）
@@ -150,6 +151,16 @@ npm run smoke            # 13 项  界面端到端 + 五张截图
 npm run bench      # 2000 条数据的逐项耗时 + EXPLAIN QUERY PLAN
 npm run bench:ui   # 首屏 / 切筛选 / 切排序 / 续载的渲染耗时
 ```
+
+还有一个只读的维护脚本，用来找出「没有任何笔记引用」的图片：
+
+```bash
+npm run scan:assets                       # 用配置里的数据目录
+npm run scan:assets -- --dir=D:/我的思库    # 指定数据目录
+```
+
+它只统计、不删除。图片是内容哈希命名的，误判一次就是不可逆的数据丢失，
+所以清理这一步留给人来确认（回收站里的笔记也算引用，因为它还能恢复）。
 
 实测（2000 条）：列表首屏 0.6ms、中文搜索 2.0ms、新建 3.6ms、界面切标签 9.5ms。
 **瓶颈不在数据库也不在渲染**——所以只优化了真正慢的地方，没有为了数字好看折腾。
