@@ -47,6 +47,7 @@
 
 - **回收站**：删除先入回收站，30 天自动清理；删完 6 秒内可撤销
 - **自动备份**：每次启动备份一份 `.db`，滚动保留 7 份
+- **手动压缩**：托盘「压缩数据库」回收彻底删除后留下的空闲页（内部会自动重建搜索索引）
 - **导出 / 导入**：全量导 Markdown 或 JSON，导入按 id 去重
 - **数据可搬家**：设置里换目录，笔记、图片、备份、草稿一起走，原位置保留
 
@@ -123,13 +124,13 @@ logs/app.log   异常日志
 ## 测试
 
 15 套脚本，全部在真实 Electron 里跑（真窗口、真 SQLite、真文件系统），不是 mock。
-其中 4 套是纯数据/纯逻辑，无头环境也能跑：
+其中 9 套是纯数据/纯逻辑，无头环境也能跑：
 
 ```bash
-npm test               # 一次跑完 10 套并汇总（任一失败非零退出）
-npm run test:data      # 只跑不需要窗口的 5 套（CI 用这个）
+npm test               # 一次跑完 14 套并汇总（任一失败非零退出；smoke 要构建产物，单独跑）
+npm run test:data      # 只跑不需要窗口的 9 套（CI 用这个）
 
-npm run test:db          # 49 项  数据库层：中文搜索/标签/回收站/导入/迁移/schema 版本
+npm run test:db          # 57 项  数据库层：中文搜索/标签/回收站/导入/迁移/schema 版本
 npm run test:datadir     # 17 项  数据目录搬迁：复制/切换/取消/回滚/不可写
 npm run test:nav         # 20 项  导航边界：外链白名单，javascript:/data:/file: 一律挡掉
 npm run test:consistency #  6 项  标签正则与版本号不许在多处漂移
@@ -186,7 +187,7 @@ SUM:   SCAN  notes USING COVERING INDEX idx_notes_deleted
 ## v0.9.2 整改（2026-10）
 
 第二轮审视的结论是「数据层已经没有优化空间」，风险都在数据层之外。
-按主题拆成 10 个提交，每条都能单独回滚：
+按主题拆成 9 个提交，每条都能单独回滚：
 
 | 提交 | 改了什么 | 为什么 |
 |---|---|---|
@@ -199,7 +200,6 @@ SUM:   SCAN  notes USING COVERING INDEX idx_notes_deleted
 | `fix(ui)` | 列表刷新加请求序号、编辑清空给提示、粘贴图片 20MB 上限 | 三个「用户以为成功了其实没有」的场景 |
 | `refactor(tags)` | 标签只由 content 解析，浏览器兜底同步校验 | 前端传的 `tags` 参数是死的，两边语义已经分叉 |
 | `chore(test)` | `npm test` 统一入口 + 一致性测试 | 7 个脚本以前要逐个敲，容易漏跑 |
-| `fix(db)` | FTS 行改用 `notes.rowid` 寻址 | `note_id` 是 UNINDEXED 列，按它删会让 FTS5 全表扫描；导入 5 万条因此从 **128s → 2.6s** |
 
 规模实测（5 万条）：列表 0.32ms、写入 5ms 级、`quickCheck` 162ms、备份 121ms（都在首屏之后）。
 **唯一还在退化的交互查询是 `listTags`**（0.87ms → 25.58ms），已经用 `withTags` 按需跳过。
@@ -208,6 +208,9 @@ SUM:   SCAN  notes USING COVERING INDEX idx_notes_deleted
 
 同一轮里继续往下挖的几处（都带实测或断言）：
 
+- **FTS 行改用 `notes.rowid` 寻址**：`note_id` 是 UNINDEXED 列，按它删会让 FTS5 全表扫描，
+  写路径每行都要「先删后插」，导入因此是 O(n²)。5 万条 **128s → 2.6s**，`updateNote` 也小降；
+  schema 升到 v2 并一次性重建索引（5 万条 604ms）
 - **VACUUM 的坑**：FTS 行用 `notes.rowid` 定位，而 VACUUM 会重排 rowid，
   所以 `db.vacuum()` 内部固定跟着 `rebuildFts()`，两个动作不能拆开
 - **日志轮转**：`app.log` 超过 2MB 改名 `app.log.1`，只留一份
