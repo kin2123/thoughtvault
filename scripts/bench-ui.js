@@ -6,7 +6,7 @@ const os = require('os')
 
 const tmp = path.join(os.tmpdir(), 'thoughtvault-ubench-' + Date.now())
 app.setPath('userData', tmp)
-app.disableHardwareAcceleration()
+require('./ui-env').tune(app)
 
 const root = path.join(__dirname, '..')
 const N = Number(process.env.BENCH_N || 500)

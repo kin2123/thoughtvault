@@ -124,11 +124,11 @@ logs/app.log   异常日志（超过 2MB 轮转成 app.log.1，只留一份）
 
 ## 测试
 
-16 套脚本，全部在真实 Electron 里跑（真窗口、真 SQLite、真文件系统），不是 mock。
+17 套脚本，全部在真实 Electron 里跑（真窗口、真 SQLite、真文件系统），不是 mock。
 其中 10 套是纯数据/纯逻辑，无头环境也能跑：
 
 ```bash
-npm test               # 一次跑完 15 套并汇总（任一失败非零退出；smoke 要构建产物，单独跑）
+npm test               # 先构建，再跑完 16 套并汇总（任一失败非零退出）
 npm run test:data      # 只跑不需要窗口的 10 套（CI 用这个）
 
 npm run test:db          # 65 项  数据库层：中文搜索/标签/回收站/导入/恢复/迁移/schema 版本
@@ -141,12 +141,13 @@ npm run test:logic       # 31 项  展示逻辑：剥标签 / 时间格式 / 按
 npm run test:recovery    #  8 项  渲染进程崩溃后的自动重载限流
 npm run test:ipc-guard   # 22 项  IPC 入参收敛：limit 上限 / 非法排序 / id 与标签数量
 npm run test:maintenance # 10 项  周期维护：备份阈值 / 时钟回拨 / 自定义间隔
+npm run test:ui-features # 10 项  界面：高亮 / 批量撤销 / 回收站倒计时 / 导出 / 主题 / 拖拽
 npm run test:groups      # 11 项  时间分组与键盘导航
 npm run test:paging      #  7 项  灌 300 条验分页与滚动续载
 npm run test:batch       #  5 项  多选批量删除（端到端：点勾选 → 点删除 → 查库）
 npm run test:edge        # 14 项  边界攻击：FTS 注入、XSS、12 万字、畸形导入
 npm run test:edge2       # 10 项  连续操作、空态、批量标签、图片类型白名单
-npm run smoke            # 13 项  界面端到端 + 五张截图
+npm run smoke            # 13 项  界面端到端 + 五张截图（不在 npm test 里，单独跑）
 npm run lint             # ESLint（essential 级别，只拦会变成 bug 的写法）
 ```
 

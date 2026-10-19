@@ -6,7 +6,7 @@ const os = require('os')
 
 const tmp = path.join(os.tmpdir(), 'thoughtvault-shots-' + Date.now())
 app.setPath('userData', tmp)
-app.disableHardwareAcceleration()
+require('./ui-env').tune(app)
 
 const root = path.join(__dirname, '..')
 const outDir = path.join(root, '.workbuddy')

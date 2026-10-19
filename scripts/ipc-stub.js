@@ -53,7 +53,12 @@ function install({ db, store, config, tmp, opts = {} }) {
 
   /* 配置 */
   on('config:get', () => base())
-  on('config:set', (_e, p) => ({ ...base(), ...p }))
+  // 和主进程一样落盘，否则「设置是否持久化」这类断言测不出来
+  on('config:set', (_e, p) => {
+    const next = { ...config.load(), ...p }
+    config.save(next)
+    return { ...base(), ...p }
+  })
   on('hotkey:set', () => ({ ok: true }))
   on('hotkey:reset', () => ({ ok: true }))
 
