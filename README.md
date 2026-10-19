@@ -183,6 +183,7 @@ SUM:   SCAN  notes USING COVERING INDEX idx_notes_deleted
 | `fix(ui)` | 列表刷新加请求序号、编辑清空给提示、粘贴图片 20MB 上限 | 三个「用户以为成功了其实没有」的场景 |
 | `refactor(tags)` | 标签只由 content 解析，浏览器兜底同步校验 | 前端传的 `tags` 参数是死的，两边语义已经分叉 |
 | `chore(test)` | `npm test` 统一入口 + 一致性测试 | 7 个脚本以前要逐个敲，容易漏跑 |
+| `fix(db)` | FTS 行改用 `notes.rowid` 寻址 | `note_id` 是 UNINDEXED 列，按它删会让 FTS5 全表扫描；导入 5 万条因此从 **128s → 2.6s** |
 
 规模实测（5 万条）：列表 0.32ms、写入 5ms 级、`quickCheck` 162ms、备份 121ms（都在首屏之后）。
 **唯一还在退化的交互查询是 `listTags`**（0.87ms → 25.58ms），已经用 `withTags` 按需跳过。
