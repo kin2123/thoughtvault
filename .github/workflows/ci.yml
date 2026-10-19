@@ -1,0 +1,26 @@
+name: CI
+
+# 只做「不需要真实窗口」的检查：
+#   lint + 构建（纯 Node，无 ABI 问题）
+# 数据层测试要跑 Electron（better-sqlite3 得按 Electron ABI 重编），
+# 在 Actions 上还得额外装 electron-rebuild，属于另一件事，先不放进来。
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: 安装依赖
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: 构建
+        run: npm run build
