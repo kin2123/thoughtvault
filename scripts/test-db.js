@@ -137,6 +137,40 @@ app.whenReady().then(() => {
   check('丢掉的是最旧的 4 份', !kept.some((b) => /notes-2020010[0-3]/.test(b.name)), kept.map((b) => b.name).join(','))
   check('最新一份仍是刚做的真实备份', kept[0].name === bak.name, kept[0].name + ' vs ' + bak.name)
 
+  /* 从备份恢复：要么完整换回去，要么原样退回，不能两头都不对 */
+  db.createNote({ content: '恢复前就在的笔记 #keep' })
+  const restoreBak = db.backupTo(path.join(tmp, 'restore'))
+  db.createNote({ content: '备份之后才写的一条 #after' })
+
+  const rOk = db.restoreFrom(restoreBak.path)
+  check('从备份恢复成功', rOk.ok === true, JSON.stringify(rOk))
+  check('恢复后能搜到备份里的笔记', db.listNotes({ query: '恢复前就在' }).length === 1)
+  check('恢复后看不到备份之后的改动', db.listNotes({ query: '备份之后才写' }).length === 0)
+
+  const activeNow = db.getStats().active
+  const missing = db.restoreFrom(path.join(tmp, 'no-such-file.db'))
+  check('不存在的备份被拒绝', missing.ok === false && /找不到/.test(missing.error), missing.error)
+
+  const bogus = path.join(tmp, 'bogus.db')
+  fs.writeFileSync(bogus, 'this is not a database')
+  const bad = db.restoreFrom(bogus)
+  check(
+    '损坏文件被拒绝且不影响现有数据',
+    bad.ok === false && db.getStats().active === activeNow,
+    bad.error
+  )
+
+  const newer = path.join(tmp, 'newer.db')
+  fs.copyFileSync(restoreBak.path, newer)
+  const BS3 = require('better-sqlite3')
+  const dn = new BS3(newer)
+  dn.pragma('user_version = 99')
+  dn.close()
+  const tooNew = db.restoreFrom(newer)
+  check('更高 schema 版本的备份被拒绝', tooNew.ok === false && /更新的版本/.test(tooNew.error), tooNew.error)
+  check('被拒绝后仍能正常写入', db.createNote({ content: '恢复被拒后的写入' }).content.includes('恢复被拒'))
+
+
   /* VACUUM 会重排 rowid，必须同时重建 FTS，否则搜索会串行 */
   const vacNote = db.createNote({ content: '压缩测试专用笔记 #vac' })
   const sizeBefore = fs.statSync(db.dbFile()).size

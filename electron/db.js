@@ -625,6 +625,77 @@ function backupTo(dir) {
   }
 }
 
+/**
+ * 用备份文件覆盖当前数据库。
+ *
+ * 顺序：验证备份 → 关库 → 把当前库复制一份临时副本 → 覆盖 → 重开并校验
+ * → 失败就用副本回滚。不能出现「恢复失败顺带把现有数据也弄没了」。
+ *
+ * 备份可能是旧 schema（v1），open() 会自动跑迁移重建 FTS。
+ */
+function restoreFrom(srcPath) {
+  const src = path.resolve(String(srcPath || ''))
+  const target = path.resolve(dbFile())
+  if (!srcPath || !fs.existsSync(src)) return { ok: false, error: '找不到这个备份文件' }
+  if (src === target) return { ok: false, error: '不能用当前数据库文件本身恢复' }
+
+  // 1. 先验证备份可用，避免拿一个坏文件去覆盖好数据
+  let probe = null
+  try {
+    probe = new Database(src, { readonly: true, fileMustExist: true })
+    const check = probe.pragma('quick_check', { simple: true })
+    if (check !== 'ok') throw new Error('备份校验未通过：' + check)
+    const ver = probe.pragma('user_version', { simple: true })
+    if (ver > SCHEMA_VERSION) {
+      throw new Error(`备份来自更新的版本（schema v${ver}），请先升级应用`)
+    }
+    const hasNotes = probe
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'notes'")
+      .get()
+    if (!hasNotes) throw new Error('这个文件不是思库的数据库')
+  } catch (err) {
+    return { ok: false, error: err.message }
+  } finally {
+    if (probe) {
+      try {
+        probe.close()
+      } catch (_) {}
+    }
+  }
+
+  // 2. 关库、留副本、覆盖
+  const safety = target + '.restoring'
+  close()
+  try {
+    if (fs.existsSync(target)) fs.copyFileSync(target, safety)
+    fs.copyFileSync(src, target)
+    // 旧库的 WAL / SHM 与新库对不上，必须清掉
+    for (const f of [target + '-wal', target + '-shm']) {
+      try {
+        fs.unlinkSync(f)
+      } catch (_) {}
+    }
+    open() // 顺带跑 schema 迁移
+    const check = quickCheck()
+    if (check !== 'ok') throw new Error('恢复后校验未通过：' + check)
+    try {
+      fs.unlinkSync(safety)
+    } catch (_) {}
+    return { ok: true, path: target, restoredFrom: src }
+  } catch (err) {
+    // 3. 回滚到恢复前的数据
+    try {
+      close()
+      if (fs.existsSync(safety)) fs.copyFileSync(safety, target)
+      open()
+    } catch (_) {}
+    try {
+      fs.unlinkSync(safety)
+    } catch (_) {}
+    return { ok: false, error: '恢复失败，已回滚到原数据：' + err.message }
+  }
+}
+
 /** 合并 FTS5 的倒排索引段，批量写入后调用能明显缩小索引、加快查询 */
 function optimizeFts() {
   try {
@@ -727,6 +798,7 @@ module.exports = {
   importNotes,
   migrateFromJson,
   backupTo,
+  restoreFrom,
   optimizeFts,
   rebuildFts,
   vacuum,
