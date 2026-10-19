@@ -131,7 +131,7 @@ logs/app.log   异常日志（超过 2MB 轮转成 app.log.1，只留一份）
 npm test               # 一次跑完 15 套并汇总（任一失败非零退出；smoke 要构建产物，单独跑）
 npm run test:data      # 只跑不需要窗口的 10 套（CI 用这个）
 
-npm run test:db          # 64 项  数据库层：中文搜索/标签/回收站/导入/恢复/迁移/schema 版本
+npm run test:db          # 65 项  数据库层：中文搜索/标签/回收站/导入/恢复/迁移/schema 版本
 npm run test:datadir     # 17 项  数据目录搬迁：复制/切换/取消/回滚/不可写
 npm run test:nav         # 20 项  导航边界：外链白名单，javascript:/data:/file: 一律挡掉
 npm run test:consistency #  6 项  标签正则与版本号不许在多处漂移
