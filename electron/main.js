@@ -22,6 +22,7 @@ const nav = require('./nav')
 const { createLogger } = require('./logger')
 const { createReloadGate } = require('./recovery')
 const guard = require('./ipc-guard')
+const { needsBackup } = require('./maintenance')
 
 // 必须在 app ready 之前注册，否则自定义协议拿不到安全上下文
 assets.registerScheme()
@@ -541,6 +542,9 @@ function registerIpc() {
 // 启动时它们既不该挡在 createWindow() 前面，也不该卡住渲染进程发来的首屏
 // bootstrap 请求（那笔请求正是首屏要等的）。所以统一推迟到首屏渲染完之后。
 let maintenanceDone = false
+let maintenanceTimer = null
+// 每小时醒一次：回收站清理每次都做，备份看距上次是否超过 24 小时
+const MAINTENANCE_TICK = 60 * 60 * 1000
 
 function runStartupMaintenance() {
   if (maintenanceDone) return
@@ -566,6 +570,28 @@ function runStartupMaintenance() {
   } catch (err) {
     logLine('启动备份失败: ' + (err && err.message ? err.message : err))
   }
+}
+
+function runPeriodicMaintenance() {
+  if (!db.isOpen()) return
+
+  try {
+    const purged = db.purgeExpired()
+    if (purged) logLine('回收站自动清理 ' + purged + ' 条')
+  } catch (err) {
+    logLine('回收站清理失败: ' + (err && err.message ? err.message : err))
+  }
+
+  if (!needsBackup(cfg && cfg.lastBackupAt)) return
+  const res = backupNowManually()
+  logLine(res.ok ? '周期备份: ' + res.name : '周期备份失败: ' + res.error)
+}
+
+function schedulePeriodicMaintenance() {
+  clearInterval(maintenanceTimer)
+  maintenanceTimer = setInterval(runPeriodicMaintenance, MAINTENANCE_TICK)
+  // 别让这个定时器拦着进程退出
+  if (maintenanceTimer.unref) maintenanceTimer.unref()
 }
 
 function scheduleStartupMaintenance() {
@@ -625,6 +651,7 @@ if (!gotLock) {
     if (!res.ok) logLine('快捷键注册失败: ' + cfg.hotkey)
 
     scheduleStartupMaintenance()
+    schedulePeriodicMaintenance()
 
     applyLaunchAtLogin(cfg.launchAtLogin)
 
@@ -644,6 +671,7 @@ app.on('before-quit', () => {
 })
 
 app.on('will-quit', () => {
+  clearInterval(maintenanceTimer)
   globalShortcut.unregisterAll()
   db.close()
 })
