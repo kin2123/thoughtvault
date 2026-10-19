@@ -1,7 +1,7 @@
 {
   "name": "thoughtvault",
   "productName": "思库",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "private": true,
   "description": "本地优先的轻量速记工具",
   "main": "electron/main.js",
