@@ -181,23 +181,47 @@ app.whenReady().then(() => {
   check('空库 getStats 返回 0 而非 null', emptyStats.active === 0 && emptyStats.trash === 0, JSON.stringify(emptyStats))
 
   /* schema 版本：只在「库比程序旧」时迁移并写版本，降级不能覆写 */
-  check('新建库的 user_version 是 1', db.schemaVersion() === 1, 'v=' + db.schemaVersion())
+  check('新建库的 user_version 是 2', db.schemaVersion() === 2, 'v=' + db.schemaVersion())
 
   const BS2 = require('better-sqlite3')
+  const dbPath = require('../electron/paths').notesDb()
   const setUserVersion = (v) => {
     db.close()
-    const d = new BS2(require('../electron/paths').notesDb())
+    const d = new BS2(dbPath)
     d.pragma('user_version = ' + v)
     d.close()
     db.open()
   }
 
   setUserVersion(0)
-  check('user_version=0 时自动迁移到 1', db.schemaVersion() === 1, 'v=' + db.schemaVersion())
+  check('user_version=0 时自动迁移到最新版', db.schemaVersion() === 2, 'v=' + db.schemaVersion())
 
   setUserVersion(9)
   check('库版本高于程序时不覆写', db.schemaVersion() === 9, 'v=' + db.schemaVersion())
-  setUserVersion(1) // 复原，别影响后面的断言
+  setUserVersion(2) // 复原，别影响后面的断言
+
+  /* 1 → 2：老库的 FTS 行是自增 rowid，与 notes.rowid 不对齐，迁移要重建 */
+  const migNote = db.createNote({ content: '迁移测试专用笔记 #迁移' })
+  db.close()
+  {
+    const d = new BS2(dbPath)
+    d.pragma('user_version = 1')
+    d.exec('DELETE FROM notes_fts')
+    // 故意不指定 rowid，复现 v1 的写入方式（seg 也未分词）
+    d.exec("INSERT INTO notes_fts (note_id, seg) SELECT id, content FROM notes")
+    d.close()
+  }
+  db.open() // 触发 1 → 2 迁移
+
+  const meta = new BS2(dbPath, { readonly: true })
+  const ftsRows = meta.prepare('SELECT COUNT(*) c FROM notes_fts').get().c
+  const noteRows = meta.prepare('SELECT COUNT(*) c FROM notes').get().c
+  meta.close()
+  check('迁移后 user_version = 2', db.schemaVersion() === 2, 'v=' + db.schemaVersion())
+  check('迁移后 FTS 行数与笔记数一致', ftsRows === noteRows, `${ftsRows} vs ${noteRows}`)
+  check('迁移后中文搜索仍然可用', db.listNotes({ query: '迁移测试' }).length === 1)
+  check('迁移后能搜到迁移前的标签', db.listNotes({ query: '迁移' }).length >= 1)
+  db.purge(migNote.id)
 
   // 完整校验留着（搬迁时用），启动路径改走快速校验，两个都要断言
   check('完整性检查', db.integrityCheck() === 'ok')
