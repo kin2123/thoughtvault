@@ -218,6 +218,17 @@ function updateNote(id, { content }) {
   const text = String(content == null ? '' : content).trim()
   if (!text) throw new Error('内容为空，不能保存')
   const tags = parseTags(text)
+
+  const row = db.prepare('SELECT content FROM notes WHERE id = ?').get(id)
+  if (!row) return null
+  // 内容与标签都没变就别写：原来每次进编辑再保存都会刷新 updated_at，
+  // 笔记会莫名其妙跳到列表最前面。
+  if (row.content === text) {
+    const owned = db.prepare('SELECT name FROM tags WHERE note_id = ?').all(id).map((r) => r.name)
+    const sameTags = owned.length === tags.length && tags.every((t) => owned.includes(t))
+    if (sameTags) return getNote(id)
+  }
+
   const now = Date.now()
   db.transaction(() => {
     db.prepare('UPDATE notes SET content = ?, updated_at = ? WHERE id = ?').run(text, now, id)

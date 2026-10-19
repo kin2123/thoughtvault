@@ -46,6 +46,15 @@ app.whenReady().then(() => {
   check('更新后搜索命中新内容', db.listNotes({ query: '改了内容' }).length === 1)
   check('更新后旧标签移除', db.listNotes({ tag: '数据库' }).length === 0)
 
+  // 进编辑再原样保存不应该把笔记顶到最前面
+  const t0 = db.getNote(a.id).updatedAt
+  const spin = Date.now()
+  while (Date.now() - spin < 5); // 保证「如果写了」时间戳一定会变
+  db.updateNote(a.id, { content: db.getNote(a.id).content })
+  check('内容未变时不刷新 updated_at', db.getNote(a.id).updatedAt === t0, `${t0} -> ${db.getNote(a.id).updatedAt}`)
+  db.updateNote(a.id, { content: db.getNote(a.id).content + ' 再补一句' })
+  check('内容变了才刷新 updated_at', db.getNote(a.id).updatedAt > t0)
+
   db.softDelete(c.id)
   check('软删除后列表不含该条', db.listNotes({}).length === 2)
   check('回收站可见', db.listTrash().length === 1)
