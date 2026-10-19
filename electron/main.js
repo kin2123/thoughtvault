@@ -18,6 +18,7 @@ const db = require('./db')
 const paths = require('./paths')
 const { createRelocator } = require('./relocate')
 const assets = require('./assets')
+const nav = require('./nav')
 
 // 必须在 app ready 之前注册，否则自定义协议拿不到安全上下文
 assets.registerScheme()
@@ -123,6 +124,36 @@ function registerHotkey(accel, fallback) {
   }
 }
 
+/* ---------- 导航边界 ---------- */
+
+// 笔记里的 Markdown 链接是普通 <a href>，点一下会把整个窗口导航走，
+// 而 preload 会在新页面重新注入——window.vault 那 30 多个 IPC 就交给了外站。
+// 所以：只允许停留在自己的页面，外链一律交给系统浏览器。
+function openExternal(url) {
+  const safe = nav.externalUrl(url)
+  if (!safe) return
+  shell.openExternal(safe).catch((err) => logLine('打开外链失败: ' + err.message))
+}
+
+function hardenNavigation(w) {
+  const opts = { devUrl: DEV_URL || '', appDir: path.join(__dirname, '..', 'dist') }
+
+  w.webContents.on('will-navigate', (e, url) => {
+    if (nav.isInternal(url, opts)) return
+    e.preventDefault()
+    openExternal(url)
+  })
+
+  // target="_blank" / window.open：不开新窗，直接外开
+  w.webContents.setWindowOpenHandler(({ url }) => {
+    openExternal(url)
+    return { action: 'deny' }
+  })
+
+  // 本项目不用 webview，禁掉减少一个攻击面
+  w.webContents.on('will-attach-webview', (e) => e.preventDefault())
+}
+
 /* ---------- 窗口 ---------- */
 
 function createWindow() {
@@ -144,6 +175,7 @@ function createWindow() {
     }
   })
 
+  hardenNavigation(win)
   Menu.setApplicationMenu(null)
 
   if (DEV_URL) {
