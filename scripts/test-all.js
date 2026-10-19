@@ -11,7 +11,7 @@ const path = require('path')
 
 const electron = require('electron')
 
-const DATA_TESTS = ['test-db', 'test-datadir', 'test-nav']
+const DATA_TESTS = ['test-db', 'test-datadir', 'test-nav', 'test-consistency']
 // 这 5 个要从 dist 加载页面，沙箱/CI 里没有真实渲染环境会失败
 const UI_TESTS = ['test-groups', 'test-paging', 'test-batch', 'test-edge', 'test-edge2']
 

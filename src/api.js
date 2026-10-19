@@ -10,7 +10,9 @@ const DEFAULT_CONFIG = {
   hotkeyActive: 'CommandOrControl+Shift+Space',
   hideOnBlur: true,
   launchAtLogin: false,
-  appVersion: '0.3.0',
+  // 版本号由主进程的 app.getVersion() 提供，这里不写死，
+  // 否则浏览器预览会长期显示一个过时的数字
+  appVersion: '',
   dataDir: '浏览器 localStorage',
   isCustomDataDir: false,
   defaultDataDir: '—',
@@ -45,6 +47,24 @@ function lsId() {
 function lsSort(a, b) {
   if (Boolean(b.pinned) !== Boolean(a.pinned)) return b.pinned ? 1 : -1
   return b.updatedAt - a.updatedAt
+}
+
+/* =========================================================
+   标签解析
+   与 electron/db.js 的 TAG_RE 保持同一套字符集。
+   桌面端仍以 main 侧解析为准，这里只是让浏览器预览的行为不要偏离：
+   两边都从 content 里解析，标签就不会有两套真相。
+   ========================================================= */
+
+const TAG_RE = /#([\p{L}\p{N}_\-\/]+)/gu
+const TAG_NAME_RE = /^[\p{L}\p{N}_\-\/]+$/u
+
+function parseTags(text) {
+  const out = []
+  for (const m of String(text || '').matchAll(TAG_RE)) {
+    if (!out.includes(m[1])) out.push(m[1])
+  }
+  return out
 }
 
 /* =========================================================
@@ -96,13 +116,13 @@ export async function getStats() {
   }
 }
 
-export async function createNote({ content, tags }) {
-  if (native) return native.create({ content, tags })
+export async function createNote({ content }) {
+  if (native) return native.create({ content })
   const now = Date.now()
   const note = {
     id: lsId(),
     content,
-    tags: tags || [],
+    tags: parseTags(content),
     createdAt: now,
     updatedAt: now,
     pinned: false,
@@ -112,13 +132,13 @@ export async function createNote({ content, tags }) {
   return note
 }
 
-export async function updateNote(id, { content, tags }) {
-  if (native) return native.update(id, { content, tags })
+export async function updateNote(id, { content }) {
+  if (native) return native.update(id, { content })
   const notes = lsRead()
   const n = notes.find((x) => x.id === id)
   if (n) {
     n.content = content
-    n.tags = tags || []
+    n.tags = parseTags(content)
     n.updatedAt = Date.now()
     lsWrite(notes)
     return n
@@ -206,6 +226,9 @@ export async function renameTag(from, to) {
   if (native) return native.renameTag(from, to)
   const target = String(to || '').trim()
   if (!target) return { ok: false, error: '新标签名不能为空' }
+  if (!TAG_NAME_RE.test(target)) {
+    return { ok: false, error: '标签名只能用中英文、数字、下划线、短横线、斜杠' }
+  }
   const notes = lsRead()
   let affected = 0
   for (const n of notes) {
@@ -240,6 +263,8 @@ export async function addTagsToNotes(ids, tags) {
   if (native) return native.addTags(plainIds, plainTags)
   const list = plainTags.map((t) => String(t).trim()).filter(Boolean)
   if (!list.length) return { ok: false, error: '标签不能为空' }
+  const bad = list.find((t) => !TAG_NAME_RE.test(t))
+  if (bad) return { ok: false, error: `标签「${bad}」含不允许的字符` }
   const notes = lsRead()
   let changed = 0
   for (const n of notes) {

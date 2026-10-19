@@ -332,7 +332,8 @@ const config = ref({
   hotkeyActive: '',
   hideOnBlur: true,
   isPackaged: false,
-  appVersion: '0.4.0',
+  // 版本号只由主进程下发；写死在这里迟早和 package.json 对不上
+  appVersion: '',
   theme: 'system',
   fontSize: 'm',
   markdown: true,
@@ -690,13 +691,8 @@ const draftHint = computed(() => {
 
 /* ---------- 文本 ---------- */
 
-function parseTags(text) {
-  const out = []
-  for (const m of text.matchAll(TAG_RE)) {
-    if (!out.includes(m[1])) out.push(m[1])
-  }
-  return out
-}
+// 标签由 main 侧从 content 解析（浏览器预览由 api.js 负责），
+// 渲染层只负责把标签从展示文本里去掉，不再产出标签数组。
 
 function stripTags(text) {
   return String(text).replace(TAG_RE, '').replace(/[ \t]+\n/g, '\n').trim()
@@ -750,7 +746,7 @@ function growToFit() {
 async function commit() {
   const text = draft.value.trim()
   if (!text) return
-  await createNote({ content: text, tags: parseTags(text) })
+  await createNote({ content: text })
   draft.value = ''
   clearDraft()
   resetPaging()
@@ -853,7 +849,7 @@ async function commitEdit(n) {
     showToast('内容不能为空，要删除请用「删除」')
     return
   }
-  await updateNote(n.id, { content: text, tags: parseTags(text) })
+  await updateNote(n.id, { content: text })
   cancelEdit()
   await refreshAll()
 }
