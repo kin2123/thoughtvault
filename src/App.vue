@@ -289,6 +289,8 @@ import TrashView from './components/TrashView.vue'
 
 const TAG_RE = /#([\p{L}\p{N}_\-\/]+)/gu
 const PAGE_SIZE = 80
+// 图片要整个 buffer 走结构化克隆过 IPC，10MB 截图会带来 20MB+ 的峰值
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 const mdCache = new Map()
@@ -758,6 +760,10 @@ async function onPaste(e) {
     e.preventDefault()
     const file = item.getAsFile()
     if (!file) return
+    if (file.size > MAX_IMAGE_BYTES) {
+      showToast(`图片 ${(file.size / 1048576).toFixed(1)}MB，超过 20MB 上限，压缩后再粘贴`)
+      return
+    }
     const ext = (item.type.split('/')[1] || 'png').replace('jpeg', 'jpg')
     const buffer = new Uint8Array(await file.arrayBuffer())
     const res = await saveAsset(buffer, ext)
@@ -822,9 +828,12 @@ function cancelEdit() {
 
 async function commitEdit(n) {
   const text = editDraft.value.trim()
-  if (text) {
-    await updateNote(n.id, { content: text, tags: parseTags(text) })
+  if (!text) {
+    // 原来这里直接 cancelEdit()，用户按「保存」等于「取消」，什么都没发生也没提示
+    showToast('内容不能为空，要删除请用「删除」')
+    return
   }
+  await updateNote(n.id, { content: text, tags: parseTags(text) })
   cancelEdit()
   await refreshAll()
 }
