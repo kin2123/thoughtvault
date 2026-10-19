@@ -12,6 +12,7 @@
         <p class="content">{{ stripTags(n.content) }}</p>
         <div class="foot">
           <span class="time">删除于 {{ fmt(n.deletedAt) }}</span>
+          <span class="expire">{{ expiryText(n.deletedAt) }}</span>
           <div class="actions">
             <button @click="$emit('restore', n)">恢复</button>
             <button class="danger" @click="$emit('purge', n)">彻底删除</button>
@@ -36,6 +37,17 @@ defineProps({
 })
 
 defineEmits(['back', 'restore', 'purge', 'empty'])
+
+// 与 db.purgeExpired 的 30 天保持一致（那里是默认参数，改这边记得同步）
+const TRASH_TTL_DAYS = 30
+
+function expiryText(ts) {
+  if (!ts) return ''
+  const left = Math.ceil((ts + TRASH_TTL_DAYS * 86400000 - Date.now()) / 86400000)
+  if (left <= 0) return '即将自动清理'
+  if (left === 1) return '明天自动清理'
+  return left + ' 天后自动清理'
+}
 
 function fmt(ts) {
   if (!ts) return '—'
@@ -138,6 +150,13 @@ function fmt(ts) {
 .time {
   font-size: 11.5px;
   color: var(--text-faint);
+}
+
+.expire {
+  margin-left: 8px;
+  font-size: 11px;
+  color: var(--text-faint);
+  opacity: 0.75;
 }
 
 .actions {
