@@ -20,6 +20,7 @@ app.whenReady().then(async () => {
   const mod = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'lib', 'text.mjs')).toString())
   const { stripTags, fmtTime, dayLabel, buildGroups } = mod
   const prefs = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'lib', 'prefs.mjs')).toString())
+  const hl = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'lib', 'highlight.mjs')).toString())
 
   const now = new Date(2026, 9, 19, 12, 0, 0).getTime()
   const at = (y, m, d, hh = 9, mm = 5) => new Date(y, m - 1, d, hh, mm).getTime()
@@ -62,6 +63,17 @@ app.whenReady().then(async () => {
   const byLength = buildGroups(items, { sort: 'length', now })
   check('按篇幅排序不分组', byLength.length === 1 && byLength[0].label === null && byLength[0].key === '_all')
   check('空列表返回空数组', buildGroups([], { now }).length === 0)
+
+  /* 搜索高亮切分 */
+  const seg = (t, q) => hl.splitByQuery(t, q).map((p) => (p.hit ? '[' + p.text + ']' : p.text)).join('')
+  check('无关键词时原样返回', seg('今天学习', '') === '今天学习')
+  check('单词命中被切出来', seg('今天学习 SQLite', '学习') === '今天[学习] SQLite', seg('今天学习 SQLite', '学习'))
+  check('大小写不敏感', seg('学习 SQLite', 'sqlite') === '学习 [SQLite]', seg('学习 SQLite', 'sqlite'))
+  check('多次命中都高亮', seg('a-b-a', 'a') === '[a]-b-[a]', seg('a-b-a', 'a'))
+  check('多词分别高亮', seg('学习 sqlite 索引', '学习 索引') === '[学习] sqlite [索引]', seg('学习 sqlite 索引', '学习 索引'))
+  check('长词优先，不被短词拆开', seg('学习', '学 学习') === '[学习]', seg('学习', '学 学习'))
+  check('正则元字符按字面处理', seg('a.b', '.') === 'a[.]b', seg('a.b', '.'))
+  check('查不到时原样返回', seg('abc', 'zzz') === 'abc')
 
   /* 外观偏好：非法值必须回落，否则 dataset 上会挂个不存在的名字 */
   check('强调色: 合法值保留', prefs.normalizeAccent('teal') === 'teal')

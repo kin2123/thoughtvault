@@ -305,6 +305,7 @@ import TagManager from './components/TagManager.vue'
 import TrashView from './components/TrashView.vue'
 import { buildGroups, fmtTime as fmt, stripTags } from './lib/text.mjs'
 import { normalizeAccent, normalizeDensity } from './lib/prefs.mjs'
+import { splitByQuery } from './lib/highlight.mjs'
 
 const PAGE_SIZE = 80
 // 图片要整个 buffer 走结构化克隆过 IPC，10MB 截图会带来 20MB+ 的峰值
@@ -407,6 +408,8 @@ onMounted(async () => {
 
   window.addEventListener('keydown', onGlobalKey)
   window.addEventListener('tv-error', onGlobalError)
+  window.addEventListener('dragover', onWindowDragOver)
+  window.addEventListener('drop', onWindowDrop)
 
   mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
   mediaQuery.addEventListener('change', applyAppearance)
@@ -417,6 +420,8 @@ onBeforeUnmount(() => {
   offOpenPanel && offOpenPanel()
   window.removeEventListener('keydown', onGlobalKey)
   window.removeEventListener('tv-error', onGlobalError)
+  window.removeEventListener('dragover', onWindowDragOver)
+  window.removeEventListener('drop', onWindowDrop)
   clearTimeout(draftTimer)
   clearTimeout(searchTimer)
   clearTimeout(toastTimer)
@@ -656,6 +661,13 @@ watch(query, () => {
   }, 220)
 })
 
+// 列表、关键词、Markdown 开关任一变化，等 DOM 落定后重刷高亮
+watch(
+  [() => items.value, () => query.value, () => config.value.markdown],
+  () => nextTick(paintHighlights),
+  { flush: 'post' }
+)
+
 const draftHint = computed(() => {
   if (!draft.value) return 'Enter 保存 · Shift+Enter 换行 · #标签 · 图片可粘贴'
   return `${draft.value.length} 字 · 已自动存草稿 · Enter 保存`
@@ -679,6 +691,67 @@ function mdHtml(n) {
   if (mdCache.size > 400) mdCache.clear()
   mdCache.set(key, html)
   return html
+}
+
+/* ---------- 搜索高亮 ---------- */
+
+// 为什么不用指令：列表卡片用了 v-memo，query 不在依赖里，
+// 改关键词时卡片不会重渲染，指令的 updated 也就不会触发。
+// 所以在列表更新后直接扫一遍 DOM 更可靠。
+
+function paintOne(root, rawQuery) {
+  // 先把上一次的 <mark> 拆掉，恢复纯文本，避免反复叠加
+  for (const m of root.querySelectorAll('mark.tv-hl')) {
+    m.replaceWith(document.createTextNode(m.textContent))
+  }
+  root.normalize()
+
+  const q = String(rawQuery || '').trim()
+  if (!q) return
+
+  const nodes = []
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT
+      // 代码块里的命中不标，标了反而干扰
+      let p = node.parentElement
+      while (p && p !== root) {
+        const tag = p.tagName
+        if (tag === 'CODE' || tag === 'PRE' || tag === 'SCRIPT' || tag === 'STYLE') {
+          return NodeFilter.FILTER_REJECT
+        }
+        p = p.parentElement
+      }
+      return NodeFilter.FILTER_ACCEPT
+    }
+  })
+  while (walker.nextNode()) nodes.push(walker.currentNode)
+
+  for (const node of nodes) {
+    const parts = splitByQuery(node.nodeValue, q)
+    if (!parts.some((p) => p.hit)) continue
+
+    const frag = document.createDocumentFragment()
+    for (const part of parts) {
+      if (!part.hit) {
+        frag.appendChild(document.createTextNode(part.text))
+        continue
+      }
+      const mark = document.createElement('mark')
+      mark.className = 'tv-hl'
+      mark.textContent = part.text
+      frag.appendChild(mark)
+    }
+    node.replaceWith(frag)
+  }
+}
+
+function paintHighlights() {
+  const root = listRef.value
+  if (!root) return
+  for (const el of root.querySelectorAll('.note .content, .note .md-body')) {
+    paintOne(el, query.value)
+  }
 }
 
 /* ---------- 输入 ---------- */
@@ -746,6 +819,44 @@ async function onPaste(e) {
     }
     return
   }
+}
+
+/* ---------- 拖拽图片 ---------- */
+
+function isFileDrag(e) {
+  const types = e.dataTransfer && e.dataTransfer.types
+  return Boolean(types && Array.from(types).includes('Files'))
+}
+
+// 不拦 dragover 的话，Electron 会尝试把文件当成导航目标，窗口会闪一下
+function onWindowDragOver(e) {
+  if (isFileDrag(e)) e.preventDefault()
+}
+
+async function onWindowDrop(e) {
+  e.preventDefault()
+  const files = Array.from((e.dataTransfer && e.dataTransfer.files) || [])
+  if (!files.length) return
+
+  const images = files.filter((f) => f.type && f.type.startsWith('image/'))
+  if (!images.length) {
+    showToast('只支持拖入图片')
+    return
+  }
+
+  for (const file of images) {
+    if (file.size > MAX_IMAGE_BYTES) {
+      showToast(`图片 ${(file.size / 1048576).toFixed(1)}MB，超过 20MB 上限`)
+      continue
+    }
+    const ext = (file.type.split('/')[1] || 'png').replace('jpeg', 'jpg')
+    const buffer = new Uint8Array(await file.arrayBuffer())
+    const res = await saveAsset(buffer, ext)
+    if (res && res.ok) insertAtCursor(`\n![](${res.url})\n`)
+    else showToast((res && res.error) || '图片保存失败')
+  }
+
+  nextTick(() => inputRef.value && inputRef.value.focus())
 }
 
 function insertAtCursor(text) {
@@ -884,11 +995,26 @@ async function submitBatchTag() {
 }
 
 async function batchRemove() {
-  const n = await batchDeleteNotes(selected.value)
+  // 先留一份 id：撤销要按原样恢复，不能只提示「已删除 N 条」
+  const ids = selected.value.slice()
+  if (!ids.length) return
+  const n = await batchDeleteNotes(ids)
   selected.value = []
   selecting.value = false
   await refreshAll()
-  showToast(`已删除 ${n} 条`)
+  showToast(`已删除 ${n} 条`, '撤销', () => restoreMany(ids))
+}
+
+async function restoreMany(ids) {
+  for (const id of ids) {
+    try {
+      await restoreNote(id)
+    } catch (_) {
+      // 单条失败不挡其余恢复
+    }
+  }
+  await refreshAll()
+  showToast(`已恢复 ${ids.length} 条`)
 }
 
 /* ---------- 标签管理 ---------- */
@@ -1423,6 +1549,14 @@ function runToastAction() {
 .note.active {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent-soft);
+}
+
+/* 搜索命中：用强调色的浅底，不改变字色，避免在暗色主题下刺眼 */
+.note :deep(mark.tv-hl) {
+  background: var(--accent-soft);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
 }
 
 .note {
