@@ -425,7 +425,12 @@ async function dismissOnboarding() {
 
 /* ---------- 数据刷新 ---------- */
 
+// 列表请求的序号：refreshList 之间是并发 IPC，回来的顺序不保证。
+// 快速输入时「学」的结果可能比「学习」晚到，把新结果覆盖成旧的。
+let listSeq = 0
+
 async function refreshList({ withTags = true } = {}) {
+  const seq = ++listSeq
   // 一次 IPC 拿齐列表 + 标签 + 计数，省掉三次往返
   const res = await bootstrapNotes({
     query: query.value,
@@ -434,6 +439,8 @@ async function refreshList({ withTags = true } = {}) {
     limit: limit.value,
     withTags
   })
+  // 期间已经发起了更新的请求，这次的结果作废
+  if (seq !== listSeq) return
   items.value = res.list
   // 跳过标签统计时不要把已有的标签列表覆盖成 undefined
   if (res.tags) tagList.value = res.tags
