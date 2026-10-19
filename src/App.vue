@@ -156,6 +156,16 @@
         <p v-if="hasMore" class="more">还有更多，继续往下滚…</p>
       </section>
 
+      <section v-else-if="loadError" class="empty error">
+        <div class="empty-mark"></div>
+        <p class="empty-title">读取数据失败</p>
+        <p class="empty-sub">笔记可能还在本机，先别重装或换目录。</p>
+        <p class="empty-detail">{{ loadError }}</p>
+        <p class="empty-detail">数据目录：{{ config.dataDir }}</p>
+        <button class="retry" @click="retryLoad">重试</button>
+        <button class="retry" @click="doOpenDir()">打开数据目录</button>
+      </section>
+
       <section v-else class="empty">
         <div class="empty-mark"></div>
         <p class="empty-title">{{ stats.active ? '没有匹配的笔记' : '还没有任何记录' }}</p>
@@ -289,6 +299,8 @@ import TrashView from './components/TrashView.vue'
 
 const TAG_RE = /#([\p{L}\p{N}_\-\/]+)/gu
 const PAGE_SIZE = 80
+// 图片要整个 buffer 走结构化克隆过 IPC，10MB 截图会带来 20MB+ 的峰值
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 const mdCache = new Map()
@@ -320,7 +332,8 @@ const config = ref({
   hotkeyActive: '',
   hideOnBlur: true,
   isPackaged: false,
-  appVersion: '0.4.0',
+  // 版本号只由主进程下发；写死在这里迟早和 package.json 对不上
+  appVersion: '',
   theme: 'system',
   fontSize: 'm',
   markdown: true,
@@ -329,6 +342,8 @@ const config = ref({
 })
 
 const toast = ref(null)
+// 首屏读不出来时的原因（数据库损坏、目录没权限、db 没打开）
+const loadError = ref('')
 const inputRef = ref(null)
 const searchRef = ref(null)
 const listRef = ref(null)
@@ -351,7 +366,13 @@ onMounted(async () => {
   config.value = cfg
   applyAppearance()
 
-  await refreshAll()
+  // 这里不能裸 await：db 打不开时 main 侧只记日志，IPC 会 reject，
+  // 原来 unhandled 之后 items 为空，界面显示「还没有任何记录」——像数据丢了。
+  try {
+    await refreshAll()
+  } catch (err) {
+    loadError.value = config.value.dbError || cleanError(err)
+  }
 
   if (savedDraft) {
     draft.value = savedDraft
@@ -374,6 +395,7 @@ onMounted(async () => {
   })
 
   window.addEventListener('keydown', onGlobalKey)
+  window.addEventListener('tv-error', onGlobalError)
 
   mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
   mediaQuery.addEventListener('change', applyAppearance)
@@ -383,6 +405,7 @@ onBeforeUnmount(() => {
   offFocusInput && offFocusInput()
   offOpenPanel && offOpenPanel()
   window.removeEventListener('keydown', onGlobalKey)
+  window.removeEventListener('tv-error', onGlobalError)
   clearTimeout(draftTimer)
   clearTimeout(searchTimer)
   clearTimeout(toastTimer)
@@ -425,16 +448,25 @@ async function dismissOnboarding() {
 
 /* ---------- 数据刷新 ---------- */
 
-async function refreshList() {
+// 列表请求的序号：refreshList 之间是并发 IPC，回来的顺序不保证。
+// 快速输入时「学」的结果可能比「学习」晚到，把新结果覆盖成旧的。
+let listSeq = 0
+
+async function refreshList({ withTags = true } = {}) {
+  const seq = ++listSeq
   // 一次 IPC 拿齐列表 + 标签 + 计数，省掉三次往返
   const res = await bootstrapNotes({
     query: query.value,
     tag: activeTag.value,
     sort: config.value.sort || 'updated',
-    limit: limit.value
+    limit: limit.value,
+    withTags
   })
+  // 期间已经发起了更新的请求，这次的结果作废
+  if (seq !== listSeq) return
   items.value = res.list
-  tagList.value = res.tags
+  // 跳过标签统计时不要把已有的标签列表覆盖成 undefined
+  if (res.tags) tagList.value = res.tags
   stats.value = res.stats
   hasMore.value = res.list.length >= limit.value
 }
@@ -478,7 +510,8 @@ function onListScroll(e) {
     if (el.scrollTop + el.clientHeight < el.scrollHeight - 120) return
     loadingMore = true
     limit.value += PAGE_SIZE
-    refreshList().finally(() => {
+    // 续载只影响列表，标签统计没必要跟着重算
+    refreshList({ withTags: false }).finally(() => {
       loadingMore = false
     })
   })
@@ -646,7 +679,8 @@ watch(query, () => {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(() => {
     resetPaging()
-    refreshList()
+    // 搜索不改变标签集合，每次按键都重算 listTags 是纯浪费
+    refreshList({ withTags: false })
   }, 220)
 })
 
@@ -657,13 +691,8 @@ const draftHint = computed(() => {
 
 /* ---------- 文本 ---------- */
 
-function parseTags(text) {
-  const out = []
-  for (const m of text.matchAll(TAG_RE)) {
-    if (!out.includes(m[1])) out.push(m[1])
-  }
-  return out
-}
+// 标签由 main 侧从 content 解析（浏览器预览由 api.js 负责），
+// 渲染层只负责把标签从展示文本里去掉，不再产出标签数组。
 
 function stripTags(text) {
   return String(text).replace(TAG_RE, '').replace(/[ \t]+\n/g, '\n').trim()
@@ -717,7 +746,7 @@ function growToFit() {
 async function commit() {
   const text = draft.value.trim()
   if (!text) return
-  await createNote({ content: text, tags: parseTags(text) })
+  await createNote({ content: text })
   draft.value = ''
   clearDraft()
   resetPaging()
@@ -747,6 +776,10 @@ async function onPaste(e) {
     e.preventDefault()
     const file = item.getAsFile()
     if (!file) return
+    if (file.size > MAX_IMAGE_BYTES) {
+      showToast(`图片 ${(file.size / 1048576).toFixed(1)}MB，超过 20MB 上限，压缩后再粘贴`)
+      return
+    }
     const ext = (item.type.split('/')[1] || 'png').replace('jpeg', 'jpg')
     const buffer = new Uint8Array(await file.arrayBuffer())
     const res = await saveAsset(buffer, ext)
@@ -811,9 +844,12 @@ function cancelEdit() {
 
 async function commitEdit(n) {
   const text = editDraft.value.trim()
-  if (text) {
-    await updateNote(n.id, { content: text, tags: parseTags(text) })
+  if (!text) {
+    // 原来这里直接 cancelEdit()，用户按「保存」等于「取消」，什么都没发生也没提示
+    showToast('内容不能为空，要删除请用「删除」')
+    return
   }
+  await updateNote(n.id, { content: text })
   cancelEdit()
   await refreshAll()
 }
@@ -835,7 +871,7 @@ function onEditKey(e) {
 function pickTag(name) {
   activeTag.value = name
   resetPaging()
-  refreshList()
+  refreshList({ withTags: false })
 }
 
 const SORTS = ['updated', 'created', 'length']
@@ -848,7 +884,7 @@ async function cycleSort() {
   config.value = { ...config.value, sort: next }
   await setConfig({ sort: next })
   resetPaging()
-  await refreshList()
+  await refreshList({ withTags: false })
   showToast('排序：' + SORT_LABELS[next])
 }
 
@@ -925,7 +961,7 @@ async function doRemoveTag(name) {
 
 function backToList() {
   view.value = 'list'
-  refreshList()
+  refreshList({ withTags: false })
 }
 
 function toggleTrash() {
@@ -964,7 +1000,7 @@ async function patchConfig(patch) {
   config.value = { ...config.value, ...(await setConfig(patch)) }
   if ('sort' in patch) {
     resetPaging()
-    refreshList()
+    refreshList({ withTags: false })
   }
 }
 
@@ -1030,6 +1066,29 @@ async function doResetDataDir() {
 async function doOpenDir(which) {
   const res = await openDir(which)
   if (typeof res === 'string' && res) showToast('无法打开目录：' + res)
+}
+
+/* ---------- 错误呈现 ---------- */
+
+/** Electron 的 IPC 异常带 "Error invoking remote method 'x': Error: " 前缀，剥掉更像人话 */
+function cleanError(err) {
+  return String((err && err.message) || err || '未知错误')
+    .replace(/^Error invoking remote method '[^']*':\s*/, '')
+    .replace(/^Error:\s*/, '')
+}
+
+/** 渲染层任何未捕获异常/未处理 Promise 都从这里冒出来（src/main.js 统一上报） */
+function onGlobalError(e) {
+  showToast('操作失败：' + cleanError(e.detail))
+}
+
+async function retryLoad() {
+  loadError.value = ''
+  try {
+    await refreshAll()
+  } catch (err) {
+    loadError.value = config.value.dbError || cleanError(err)
+  }
 }
 
 /* ---------- Toast ---------- */
@@ -1554,6 +1613,37 @@ function runToastAction() {
 .empty-sub {
   font-size: 12px;
   color: var(--text-faint);
+}
+
+/* 读取失败：不能和「空列表」长得一样，否则用户以为数据丢了 */
+.empty.error .empty-mark {
+  border-style: solid;
+  border-color: var(--danger);
+}
+
+.empty-detail {
+  max-width: 440px;
+  margin-top: 2px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-faint);
+  text-align: center;
+  word-break: break-word;
+}
+
+.retry {
+  margin-top: 6px;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.retry:hover {
+  border-color: var(--accent-line);
+  color: var(--text);
 }
 
 .statusbar {

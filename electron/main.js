@@ -18,6 +18,7 @@ const db = require('./db')
 const paths = require('./paths')
 const { createRelocator } = require('./relocate')
 const assets = require('./assets')
+const nav = require('./nav')
 
 // 必须在 app ready 之前注册，否则自定义协议拿不到安全上下文
 assets.registerScheme()
@@ -31,6 +32,8 @@ let cfg = null
 let activeHotkey = null
 let suppressBlurHide = false
 let boundsTimer = null
+// 数据库没打开时的原因。渲染层据此显示错误态，而不是「还没有任何记录」
+let dbError = null
 
 // 纯文本工具用不上硬件加速，关掉能显著降低内存与老显卡/虚拟机的崩溃率。
 // 需要开回来时设环境变量 APP_GPU=1。
@@ -123,6 +126,36 @@ function registerHotkey(accel, fallback) {
   }
 }
 
+/* ---------- 导航边界 ---------- */
+
+// 笔记里的 Markdown 链接是普通 <a href>，点一下会把整个窗口导航走，
+// 而 preload 会在新页面重新注入——window.vault 那 30 多个 IPC 就交给了外站。
+// 所以：只允许停留在自己的页面，外链一律交给系统浏览器。
+function openExternal(url) {
+  const safe = nav.externalUrl(url)
+  if (!safe) return
+  shell.openExternal(safe).catch((err) => logLine('打开外链失败: ' + err.message))
+}
+
+function hardenNavigation(w) {
+  const opts = { devUrl: DEV_URL || '', appDir: path.join(__dirname, '..', 'dist') }
+
+  w.webContents.on('will-navigate', (e, url) => {
+    if (nav.isInternal(url, opts)) return
+    e.preventDefault()
+    openExternal(url)
+  })
+
+  // target="_blank" / window.open：不开新窗，直接外开
+  w.webContents.setWindowOpenHandler(({ url }) => {
+    openExternal(url)
+    return { action: 'deny' }
+  })
+
+  // 本项目不用 webview，禁掉减少一个攻击面
+  w.webContents.on('will-attach-webview', (e) => e.preventDefault())
+}
+
 /* ---------- 窗口 ---------- */
 
 function createWindow() {
@@ -144,6 +177,7 @@ function createWindow() {
     }
   })
 
+  hardenNavigation(win)
   Menu.setApplicationMenu(null)
 
   if (DEV_URL) {
@@ -199,6 +233,20 @@ function openPanel(panel) {
   win.webContents.send('ui:open', panel)
 }
 
+/* ---------- 备份 ---------- */
+
+// 托盘菜单和 IPC 各写过一遍同样的逻辑，合并成一处，顺便挡住「数据库没打开」
+function backupNowManually() {
+  if (!db.isOpen()) return { ok: false, error: '数据库未就绪，请重启应用' }
+  const res = db.backupTo(store.backupsDir())
+  if (res.ok) {
+    store.pruneBackups()
+    cfg.lastBackupAt = res.at
+    config.save(cfg)
+  }
+  return res
+}
+
 function createTray() {
   try {
     let image = nativeImage.createFromPath(iconPath())
@@ -219,14 +267,7 @@ function createTray() {
       {
         label: '立即备份',
         click: () => {
-          const res = db.backupTo(store.backupsDir())
-          if (res.ok) {
-            store.pruneBackups()
-            if (cfg) {
-              cfg.lastBackupAt = res.at
-              config.save(cfg)
-            }
-          }
+          const res = backupNowManually()
           logLine(res.ok ? '手动备份: ' + res.name : '手动备份失败: ' + res.error)
         }
       },
@@ -256,7 +297,8 @@ function publicConfig() {
     isCustomDataDir: paths.isCustom(),
     defaultDataDir: app.getPath('userData'),
     backupsDir: store.backupsDir(),
-    isPackaged: app.isPackaged
+    isPackaged: app.isPackaged,
+    dbError
   }
 }
 
@@ -378,15 +420,7 @@ function registerIpc() {
   ipcMain.handle('draft:clear', () => store.clearDraft())
 
   /* 备份 */
-  ipcMain.handle('backup:now', () => {
-    const res = db.backupTo(store.backupsDir())
-    if (res.ok) {
-      store.pruneBackups()
-      cfg.lastBackupAt = res.at
-      config.save(cfg)
-    }
-    return res
-  })
+  ipcMain.handle('backup:now', () => backupNowManually())
   ipcMain.handle('backup:list', () => store.listBackups())
 
   ipcMain.handle('app:openDir', (_e, which) => {
@@ -452,7 +486,7 @@ let maintenanceDone = false
 function runStartupMaintenance() {
   if (maintenanceDone) return
   maintenanceDone = true
-
+  if (!db.isOpen()) return
   // 日常启动用快速校验就够：能抓到页损坏，代价只有完整校验的 1/3
   try {
     const ok = db.quickCheck()
@@ -519,6 +553,7 @@ if (!gotLock) {
       const purged = db.purgeExpired()
       if (purged) logLine(`回收站自动清理 ${purged} 条`)
     } catch (err) {
+      dbError = (err && err.message) || String(err)
       logLine('数据库初始化失败: ' + (err && err.stack ? err.stack : err))
     }
 

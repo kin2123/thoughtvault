@@ -122,17 +122,23 @@ logs/app.log   异常日志
 
 ## 测试
 
-7 套脚本、**98 项断言**，全部在真实 Electron 里跑（真窗口、真 SQLite、真文件系统），不是 mock：
+10 套脚本，全部在真实 Electron 里跑（真窗口、真 SQLite、真文件系统），不是 mock。
+其中 4 套是纯数据/纯逻辑，无头环境也能跑：
 
 ```bash
-npm run test:db        # 38 项  数据库层：中文搜索/标签/回收站/导入去重/完整性/批量清理不留孤儿
-npm run test:groups    # 11 项  时间分组与键盘导航
-npm run test:paging    #  7 项  灌 300 条验分页与滚动续载
-npm run test:batch     #  5 项  多选批量删除（端到端：点勾选 → 点删除 → 查库）
-npm run test:datadir   # 17 项  数据目录搬迁：复制/切换/取消/回滚/不可写
-npm run test:edge      # 14 项  边界攻击：FTS 注入、XSS、12 万字、畸形导入
-npm run test:edge2     # 10 项  连续操作、空态、批量标签、图片类型白名单
-npm run smoke          # 13 项  界面端到端 + 五张截图
+npm test               # 一次跑完 10 套并汇总（任一失败非零退出）
+npm run test:data      # 只跑不需要窗口的 4 套（CI 用这个）
+
+npm run test:db          # 46 项  数据库层：中文搜索/标签/回收站/导入/迁移/schema 版本
+npm run test:datadir     # 17 项  数据目录搬迁：复制/切换/取消/回滚/不可写
+npm run test:nav         # 20 项  导航边界：外链白名单，javascript:/data:/file: 一律挡掉
+npm run test:consistency #  6 项  标签正则与版本号不许在多处漂移
+npm run test:groups      # 11 项  时间分组与键盘导航
+npm run test:paging      #  7 项  灌 300 条验分页与滚动续载
+npm run test:batch       #  5 项  多选批量删除（端到端：点勾选 → 点删除 → 查库）
+npm run test:edge        # 14 项  边界攻击：FTS 注入、XSS、12 万字、畸形导入
+npm run test:edge2       # 10 项  连续操作、空态、批量标签、图片类型白名单
+npm run smoke            # 13 项  界面端到端 + 五张截图
 ```
 
 这套断言抓出过 4 个真 bug，其中两个是致命的：**Vue 的响应式 Proxy 过不了 IPC 导致笔记根本存不进文件**、**批量删除同样因为 Proxy 静默失败**。这两个都是「界面看起来正常，重启/刷新才发现没了」——没有断言，肉眼永远发现不了。
@@ -160,6 +166,26 @@ SUM:   SCAN  notes USING COVERING INDEX idx_notes_deleted
 ```
 
 省掉一次往返，换来 O(匹配行) → O(全表)。这条现在连同实测数字写在 `electron/db.js` 的注释里。
+
+## v0.9.2 整改（2026-10）
+
+第二轮审视的结论是「数据层已经没有优化空间」，风险都在数据层之外。
+按主题拆成 10 个提交，每条都能单独回滚：
+
+| 提交 | 改了什么 | 为什么 |
+|---|---|---|
+| `fix(security)` | 拦截 `will-navigate` / `setWindowOpenHandler`，外链交给系统浏览器 | 原来点笔记里的链接会把整个窗口导航走，preload 在远程页重新注入，`window.vault` 的全部 IPC 就交给了那个页面 |
+| `fix(ui)` | 数据库打不开时显示错误态 | 原来会显示「还没有任何记录」，看着像数据丢了 |
+| `fix(db)` | `user_version` 只在升级时写，并补上迁移阶梯 | 原写法每次 `open()` 都覆写版本号，将来加字段会被旧版本改回去 |
+| `fix(db)` | 导入时把 `tags` 补写进正文 | 原来用 `raw.tags` 建标签行，正文里却没有 `#标签`，编辑一次就丢 |
+| `fix(db)` | 内容未变时不刷新 `updated_at` | 进编辑原样保存会把笔记顶到列表最前面 |
+| `perf(db)` | `bootstrap` 支持 `withTags: false` | `listTags` 是唯一线性退化的交互查询（25.6ms @5 万条），但只在写操作后才需要重算 |
+| `fix(ui)` | 列表刷新加请求序号、编辑清空给提示、粘贴图片 20MB 上限 | 三个「用户以为成功了其实没有」的场景 |
+| `refactor(tags)` | 标签只由 content 解析，浏览器兜底同步校验 | 前端传的 `tags` 参数是死的，两边语义已经分叉 |
+| `chore(test)` | `npm test` 统一入口 + 一致性测试 | 7 个脚本以前要逐个敲，容易漏跑 |
+
+规模实测（5 万条）：列表 0.32ms、写入 5ms 级、`quickCheck` 162ms、备份 121ms（都在首屏之后）。
+**唯一还在退化的交互查询是 `listTags`**（0.87ms → 25.58ms），已经用 `withTags` 按需跳过。
 
 ## 目录结构
 

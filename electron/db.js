@@ -8,6 +8,38 @@ let db = null
 
 const SCHEMA_VERSION = 1
 
+/**
+ * 迁移阶梯：每一项负责把库从下标版本升到下标 + 1，按顺序执行。
+ *   0 → 1：初始 schema，建表语句就在 open() 里，这里留空。
+ * 以后加字段/加表时往数组末尾追加一项，**不要修改已发布的项**。
+ */
+const MIGRATIONS = [
+  () => {} // 0 → 1
+]
+
+function schemaVersion() {
+  return db.pragma('user_version', { simple: true })
+}
+
+/**
+ * 只在「库比程序旧」时才写 user_version。
+ *
+ * 原来的写法是每次 open 都无条件写一遍，这会在两种情况下把版本信息弄坏：
+ *   ① 用户装回旧版本，旧程序把新库的版本号改小 → 下次升级时迁移重跑；
+ *   ② 将来有人加了 v2 的迁移，降级再升级就会对着已经迁移过的表再跑一遍。
+ */
+function migrate() {
+  const from = schemaVersion()
+  if (from > SCHEMA_VERSION) {
+    // 库比程序新（降级安装）：保持原样，不要覆写
+    console.warn('[db] 数据库版本 ' + from + ' 高于程序支持的 ' + SCHEMA_VERSION + '，跳过迁移')
+    return
+  }
+  if (from === SCHEMA_VERSION) return
+  for (let v = from; v < SCHEMA_VERSION; v++) MIGRATIONS[v]()
+  db.pragma('user_version = ' + SCHEMA_VERSION)
+}
+
 /* ---------- 中文分词 ---------- */
 // FTS5 的 unicode61 会把连续汉字当成一个 token，导致搜「学习」搜不到「今天学习」。
 // 做法：写入和查询时都在每个汉字前后插空格，让每个字独立成 token，查询用短语匹配。
@@ -80,7 +112,7 @@ function open() {
       tokenize = 'unicode61 remove_diacritics 2'
     );
   `)
-  db.pragma('user_version = ' + SCHEMA_VERSION)
+  migrate()
   return db
 }
 
@@ -94,6 +126,11 @@ function close() {
     } catch (_) {}
     db = null
   }
+}
+
+/** 供调用方在动手之前判断，避免拿到 null 抛 TypeError */
+function isOpen() {
+  return Boolean(db)
 }
 
 /* ---------- 标签解析 ---------- */
@@ -181,6 +218,17 @@ function updateNote(id, { content }) {
   const text = String(content == null ? '' : content).trim()
   if (!text) throw new Error('内容为空，不能保存')
   const tags = parseTags(text)
+
+  const row = db.prepare('SELECT content FROM notes WHERE id = ?').get(id)
+  if (!row) return null
+  // 内容与标签都没变就别写：原来每次进编辑再保存都会刷新 updated_at，
+  // 笔记会莫名其妙跳到列表最前面。
+  if (row.content === text) {
+    const owned = db.prepare('SELECT name FROM tags WHERE note_id = ?').all(id).map((r) => r.name)
+    const sameTags = owned.length === tags.length && tags.every((t) => owned.includes(t))
+    if (sameTags) return getNote(id)
+  }
+
   const now = Date.now()
   db.transaction(() => {
     db.prepare('UPDATE notes SET content = ?, updated_at = ? WHERE id = ?').run(text, now, id)
@@ -421,6 +469,27 @@ function batchSoftDelete(ids) {
 
 /* ---------- 导入与迁移 ---------- */
 
+/**
+ * content 是标签的唯一真相。外部 JSON 的 tags 字段只当「补全来源」：
+ * 正文里没有的标签补写进正文，这样导入后第一次编辑不会把它弄丢。
+ * （老写法直接用 raw.tags 建标签行，正文里却没有 #标签，
+ *   updateNote 一重新解析就全没了。）
+ */
+function mergeTagsIntoContent(rawContent, rawTags) {
+  const text = String(rawContent == null ? '' : rawContent)
+  if (!Array.isArray(rawTags) || !rawTags.length) return text
+  const present = parseTags(text)
+  const extra = []
+  for (const t of rawTags) {
+    const name = String(t == null ? '' : t).trim().replace(/^#/, '')
+    if (!name || present.includes(name) || extra.includes(name)) continue
+    if (!TAG_NAME_RE.test(name)) continue
+    extra.push(name)
+  }
+  if (!extra.length) return text
+  return text + ' ' + extra.map((t) => '#' + t).join(' ')
+}
+
 function importNotes(list) {
   const exists = db.prepare('SELECT 1 FROM notes WHERE id = ?')
   let added = 0
@@ -445,12 +514,13 @@ function importNotes(list) {
       }
       const createdAt = safeTs(raw.createdAt, Date.now())
       const updatedAt = safeTs(raw.updatedAt, createdAt)
-      const tags = Array.isArray(raw.tags) ? raw.tags.filter(Boolean) : []
+      const content = mergeTagsIntoContent(raw.content, raw.tags)
+      const tags = parseTags(content)
       db.prepare(
         'INSERT INTO notes (id, content, created_at, updated_at, deleted_at, pinned) VALUES (?,?,?,?,?,?)'
-      ).run(id, raw.content, createdAt, updatedAt, raw.deletedAt || null, raw.pinned ? 1 : 0)
+      ).run(id, content, createdAt, updatedAt, raw.deletedAt || null, raw.pinned ? 1 : 0)
       replaceTags(id, tags)
-      syncFts({ id, content: raw.content }, tags)
+      syncFts({ id, content }, tags)
       added++
     }
   })()
@@ -521,13 +591,18 @@ function optimizeFts() {
   }
 }
 
-/** 一次 IPC 拿齐首屏需要的数据，省掉多次往返 */
+/**
+ * 一次 IPC 拿齐首屏需要的数据，省掉多次往返。
+ *
+ * withTags=false 时跳过 listTags：标签只在写操作后才会变，
+ * 搜索和滚动续载时重算纯属浪费，而它是唯一随数据量线性增长的查询
+ * （实测 5 万条 25.6ms，占首屏 bootstrap 的 99%）。
+ */
 function bootstrap(opts = {}) {
-  return {
-    list: listNotes(opts),
-    tags: listTags(),
-    stats: getStats()
-  }
+  const { withTags = true, ...listOpts } = opts
+  const res = { list: listNotes(listOpts), stats: getStats() }
+  if (withTags) res.tags = listTags()
+  return res
 }
 
 /**
@@ -567,6 +642,7 @@ function explain(sql, params) {
 module.exports = {
   open,
   close,
+  isOpen,
   dbFile,
   segment,
   toFtsQuery,
@@ -595,5 +671,6 @@ module.exports = {
   bootstrap,
   integrityCheck,
   quickCheck,
+  schemaVersion,
   explain
 }

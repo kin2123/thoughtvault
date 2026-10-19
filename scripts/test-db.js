@@ -17,6 +17,7 @@ function check(name, ok, extra) {
 app.whenReady().then(() => {
   const db = require('../electron/db')
   db.open()
+  check('open() 之后 isOpen 为 true', db.isOpen() === true)
 
   const a = db.createNote({ content: '今天学习 SQLite 的 FTS5 索引 #开发 #数据库' })
   const b = db.createNote({ content: '面试复盘：FastAPI 依赖注入答得太浅 #面试' })
@@ -45,6 +46,15 @@ app.whenReady().then(() => {
   check('更新后搜索命中新内容', db.listNotes({ query: '改了内容' }).length === 1)
   check('更新后旧标签移除', db.listNotes({ tag: '数据库' }).length === 0)
 
+  // 进编辑再原样保存不应该把笔记顶到最前面
+  const t0 = db.getNote(a.id).updatedAt
+  const spin = Date.now()
+  while (Date.now() - spin < 5); // 保证「如果写了」时间戳一定会变
+  db.updateNote(a.id, { content: db.getNote(a.id).content })
+  check('内容未变时不刷新 updated_at', db.getNote(a.id).updatedAt === t0, `${t0} -> ${db.getNote(a.id).updatedAt}`)
+  db.updateNote(a.id, { content: db.getNote(a.id).content + ' 再补一句' })
+  check('内容变了才刷新 updated_at', db.getNote(a.id).updatedAt > t0)
+
   db.softDelete(c.id)
   check('软删除后列表不含该条', db.listNotes({}).length === 2)
   check('回收站可见', db.listTrash().length === 1)
@@ -61,6 +71,25 @@ app.whenReady().then(() => {
     { content: '外部导入的一条 #导入', tags: ['导入'], createdAt: Date.now() }
   ])
   check('导入去重', imp.added === 1 && imp.skipped === 1, JSON.stringify(imp))
+
+  /* 导入的标签必须落进正文——否则第一次编辑就丢 */
+  const impTags = db.importNotes([
+    { content: '正文本身没有标签', tags: ['补全', 'bad tag', '#带井号'] }
+  ])
+  const impNote = db.listNotes({ query: '补全' })[0]
+  check(
+    '导入时 tags 补写进正文（非法标签被丢弃）',
+    impTags.added === 1 &&
+      !!impNote &&
+      impNote.content.includes('#补全') &&
+      impNote.content.includes('#带井号') &&
+      !impNote.content.includes('bad tag'),
+    impNote && impNote.content
+  )
+  const beforeEdit = db.getNote(impNote.id).tags.slice().sort().join(',')
+  db.updateNote(impNote.id, { content: impNote.content + ' 追加一句' })
+  const afterEdit = db.getNote(impNote.id).tags.slice().sort().join(',')
+  check('导入的标签经过一次编辑仍在', beforeEdit === afterEdit, beforeEdit + ' -> ' + afterEdit)
 
   /* 标签维护 */
   const tagNote = db.createNote({ content: '标签测试 #旧名 结尾' })
@@ -134,6 +163,25 @@ app.whenReady().then(() => {
   db.emptyTrash()
   const emptyStats = db.getStats()
   check('空库 getStats 返回 0 而非 null', emptyStats.active === 0 && emptyStats.trash === 0, JSON.stringify(emptyStats))
+
+  /* schema 版本：只在「库比程序旧」时迁移并写版本，降级不能覆写 */
+  check('新建库的 user_version 是 1', db.schemaVersion() === 1, 'v=' + db.schemaVersion())
+
+  const BS2 = require('better-sqlite3')
+  const setUserVersion = (v) => {
+    db.close()
+    const d = new BS2(require('../electron/paths').notesDb())
+    d.pragma('user_version = ' + v)
+    d.close()
+    db.open()
+  }
+
+  setUserVersion(0)
+  check('user_version=0 时自动迁移到 1', db.schemaVersion() === 1, 'v=' + db.schemaVersion())
+
+  setUserVersion(9)
+  check('库版本高于程序时不覆写', db.schemaVersion() === 9, 'v=' + db.schemaVersion())
+  setUserVersion(1) // 复原，别影响后面的断言
 
   // 完整校验留着（搬迁时用），启动路径改走快速校验，两个都要断言
   check('完整性检查', db.integrityCheck() === 'ok')

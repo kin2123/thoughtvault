@@ -168,8 +168,10 @@
         </section>
 
         <footer class="foot">
-          <span>思库 v{{ config.appVersion }}</span>
-          <span class="sep">·</span>
+          <template v-if="config.appVersion">
+            <span>思库 v{{ config.appVersion }}</span>
+            <span class="sep">·</span>
+          </template>
           <span>所有数据保存在本机，不联网</span>
         </footer>
       </div>
