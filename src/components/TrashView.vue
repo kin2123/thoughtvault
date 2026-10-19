@@ -9,7 +9,7 @@
 
     <div v-if="items.length" class="list">
       <article v-for="n in items" :key="n.id" class="item">
-        <p class="content">{{ plain(n.content) }}</p>
+        <p class="content">{{ stripTags(n.content) }}</p>
         <div class="foot">
           <span class="time">删除于 {{ fmt(n.deletedAt) }}</span>
           <div class="actions">
@@ -29,17 +29,13 @@
 </template>
 
 <script setup>
-const props = defineProps({
+import { stripTags } from '../lib/text.mjs'
+
+defineProps({
   items: { type: Array, default: () => [] }
 })
 
 defineEmits(['back', 'restore', 'purge', 'empty'])
-
-const TAG_RE = /#([\p{L}\p{N}_\-\/]+)/gu
-
-function plain(text) {
-  return String(text).replace(TAG_RE, '').replace(/\s+\n/g, '\n').trim()
-}
 
 function fmt(ts) {
   if (!ts) return '—'

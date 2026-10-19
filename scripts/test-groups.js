@@ -1,5 +1,5 @@
 // 时间分组与键盘导航验证
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const os = require('os')

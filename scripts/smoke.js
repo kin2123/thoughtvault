@@ -1,5 +1,5 @@
 // 无头渲染自检：加载真实构建产物 + 真实 SQLite，截三张图并跑六项端到端断言
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const os = require('os')

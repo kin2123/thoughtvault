@@ -102,6 +102,9 @@
           </div>
 
           <template v-if="!isCollapsed(g)">
+            <!-- v-memo 和 v-for 在同一个元素上是官方支持的用法，
+                 但 valid-v-memo 只记最近一个 v-for 祖先，遇到这里
+                 「外层 template v-for + 内层 article v-for」会误报 -->
             <article
               v-for="n in g.items"
               :key="n.id"

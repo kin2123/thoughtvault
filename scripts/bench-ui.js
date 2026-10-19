@@ -1,5 +1,5 @@
 // 界面渲染基线：量「切筛选 / 切排序 / 首屏 / 续载」的真实耗时
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const os = require('os')

@@ -2,7 +2,7 @@
 // 放在 Vue 组件外面，一是 App.vue 少 70 行，二是这些函数可以在 Node 里直接测
 // （scripts/test-logic.js 通过动态 import 跑它们，不需要真实窗口）。
 
-const TAG_RE = /#([\p{L}\p{N}_\-\/]+)/gu
+const TAG_RE = /#([\p{L}\p{N}_\-/]+)/gu
 
 /** 把正文里的 #标签 去掉，只留给人看的文本 */
 export function stripTags(text) {

@@ -14,6 +14,7 @@
     "app": "vite build && electron .",
     "dev:app": "node scripts/dev-app.mjs",
     "smoke": "vite build && electron scripts/smoke.js",
+    "lint": "eslint .",
     "test": "node scripts/test-all.js",
     "test:data": "node scripts/test-all.js --data-only",
     "test:db": "electron scripts/test-db.js",
@@ -40,9 +41,13 @@
     "vue": "^3.5.13"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@vitejs/plugin-vue": "^5.2.1",
-    "electron": "~33.2.0",
+    "electron": "~33.4.11",
     "electron-builder": "^25.1.8",
+    "eslint": "^10.13.0",
+    "eslint-plugin-vue": "^10.11.1",
+    "globals": "^17.13.0",
     "vite": "^6.0.5"
   },
   "build": {

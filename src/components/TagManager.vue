@@ -51,7 +51,7 @@
 <script setup>
 import { ref } from 'vue'
 
-const props = defineProps({
+defineProps({
   tags: { type: Array, default: () => [] }
 })
 

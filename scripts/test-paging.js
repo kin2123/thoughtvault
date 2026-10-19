@@ -1,5 +1,5 @@
 // 分页验证：灌 300 条笔记，检查首屏渲染数量与滚动续载是否生效
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const os = require('os')

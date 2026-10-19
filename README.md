@@ -144,6 +144,7 @@ npm run test:batch       #  5 项  多选批量删除（端到端：点勾选 �
 npm run test:edge        # 14 项  边界攻击：FTS 注入、XSS、12 万字、畸形导入
 npm run test:edge2       # 10 项  连续操作、空态、批量标签、图片类型白名单
 npm run smoke            # 13 项  界面端到端 + 五张截图
+npm run lint             # ESLint（essential 级别，只拦会变成 bug 的写法）
 ```
 
 这套断言抓出过 4 个真 bug，其中两个是致命的：**Vue 的响应式 Proxy 过不了 IPC 导致笔记根本存不进文件**、**批量删除同样因为 Proxy 静默失败**。这两个都是「界面看起来正常，重启/刷新才发现没了」——没有断言，肉眼永远发现不了。

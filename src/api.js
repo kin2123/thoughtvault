@@ -56,8 +56,8 @@ function lsSort(a, b) {
    两边都从 content 里解析，标签就不会有两套真相。
    ========================================================= */
 
-const TAG_RE = /#([\p{L}\p{N}_\-\/]+)/gu
-const TAG_NAME_RE = /^[\p{L}\p{N}_\-\/]+$/u
+const TAG_RE = /#([\p{L}\p{N}_\-/]+)/gu
+const TAG_NAME_RE = /^[\p{L}\p{N}_\-/]+$/u
 
 function parseTags(text) {
   const out = []

@@ -1,4 +1,3 @@
-const { app } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const Database = require('better-sqlite3')
@@ -140,7 +139,7 @@ function isOpen() {
 /* ---------- 标签解析 ---------- */
 // 与渲染层保持同一套字符集；main 侧再解析一遍，
 // 这样任何入口（IPC 直调、批量打标签、将来加的 CLI）都不会和界面不一致
-const TAG_RE = /#([\p{L}\p{N}_\-\/]+)/gu
+const TAG_RE = /#([\p{L}\p{N}_\-/]+)/gu
 
 function parseTags(text) {
   const out = []
@@ -150,7 +149,7 @@ function parseTags(text) {
   return out
 }
 
-const TAG_NAME_RE = /^[\p{L}\p{N}_\-\/]+$/u
+const TAG_NAME_RE = /^[\p{L}\p{N}_\-/]+$/u
 
 /* ---------- 行映射 ---------- */
 
