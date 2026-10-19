@@ -122,17 +122,18 @@ logs/app.log   异常日志
 
 ## 测试
 
-10 套脚本，全部在真实 Electron 里跑（真窗口、真 SQLite、真文件系统），不是 mock。
+11 套脚本，全部在真实 Electron 里跑（真窗口、真 SQLite、真文件系统），不是 mock。
 其中 4 套是纯数据/纯逻辑，无头环境也能跑：
 
 ```bash
 npm test               # 一次跑完 10 套并汇总（任一失败非零退出）
-npm run test:data      # 只跑不需要窗口的 4 套（CI 用这个）
+npm run test:data      # 只跑不需要窗口的 5 套（CI 用这个）
 
 npm run test:db          # 49 项  数据库层：中文搜索/标签/回收站/导入/迁移/schema 版本
 npm run test:datadir     # 17 项  数据目录搬迁：复制/切换/取消/回滚/不可写
 npm run test:nav         # 20 项  导航边界：外链白名单，javascript:/data:/file: 一律挡掉
 npm run test:consistency #  6 项  标签正则与版本号不许在多处漂移
+npm run test:logger      #  9 项  日志轮转：超 2MB 只留一份 app.log.1
 npm run test:groups      # 11 项  时间分组与键盘导航
 npm run test:paging      #  7 项  灌 300 条验分页与滚动续载
 npm run test:batch       #  5 项  多选批量删除（端到端：点勾选 → 点删除 → 查库）

@@ -19,6 +19,7 @@ const paths = require('./paths')
 const { createRelocator } = require('./relocate')
 const assets = require('./assets')
 const nav = require('./nav')
+const { createLogger } = require('./logger')
 
 // 必须在 app ready 之前注册，否则自定义协议拿不到安全上下文
 assets.registerScheme()
@@ -45,14 +46,8 @@ function iconPath() {
   return path.join(__dirname, '..', 'build', 'icon.png')
 }
 
-function logLine(msg) {
-  try {
-    const dir = paths.logs()
-    fs.mkdirSync(dir, { recursive: true })
-    const line = `[${new Date().toISOString()}] ${msg}\n`
-    fs.appendFileSync(path.join(dir, 'app.log'), line, 'utf-8')
-  } catch (_) {}
-}
+const logger = createLogger(() => paths.logs())
+const logLine = (msg) => logger.logLine(msg)
 
 /* ---------- 图片资源 ---------- */
 

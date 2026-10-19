@@ -21,6 +21,7 @@
     "test:paging": "electron scripts/test-paging.js",
     "test:batch": "electron scripts/test-batch.js",
     "test:datadir": "electron scripts/test-datadir.js",
+    "test:logger": "electron scripts/test-logger.js",
     "test:edge": "electron scripts/test-edge.js",
     "test:edge2": "electron scripts/test-edge2.js",
     "shots": "electron scripts/shots.js",
