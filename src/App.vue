@@ -309,6 +309,8 @@ import TrashView from './components/TrashView.vue'
 import { buildGroups, fmtTime as fmt, stripTags } from './lib/text.mjs'
 import { normalizeAccent, normalizeDensity } from './lib/prefs.mjs'
 import { splitByQuery } from './lib/highlight.mjs'
+import { useToast } from './composables/useToast.js'
+import { useSelection } from './composables/useSelection.js'
 
 const PAGE_SIZE = 80
 // 图片要整个 buffer 走结构化克隆过 IPC，10MB 截图会带来 20MB+ 的峰值
@@ -332,10 +334,8 @@ const view = ref('list')
 const settingsOpen = ref(false)
 const tagManagerOpen = ref(false)
 
-const selecting = ref(false)
-const selected = ref([])
-const tagging = ref(false)
-const tagInput = ref('')
+const { selecting, selected, tagging, tagInput, isSelected, toggleSelect, toggleSelectMode } =
+  useSelection()
 
 const limit = ref(PAGE_SIZE)
 const hasMore = ref(false)
@@ -356,7 +356,7 @@ const config = ref({
 })
 
 const backupItems = ref([])
-const toast = ref(null)
+const { toast, showToast, runToastAction } = useToast()
 // 首屏读不出来时的原因（数据库损坏、目录没权限、db 没打开）
 const loadError = ref('')
 const inputRef = ref(null)
@@ -368,7 +368,6 @@ let offFocusInput = () => {}
 let offOpenPanel = () => {}
 let draftTimer = null
 let searchTimer = null
-let toastTimer = null
 let mediaQuery = null
 // 滚动续载的两个闸门，见 onListScroll
 let loadingMore = false
@@ -427,7 +426,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('drop', onWindowDrop)
   clearTimeout(draftTimer)
   clearTimeout(searchTimer)
-  clearTimeout(toastTimer)
   if (mediaQuery) mediaQuery.removeEventListener('change', applyAppearance)
 })
 
@@ -966,25 +964,6 @@ async function cycleSort() {
 
 /* ---------- 多选与批量 ---------- */
 
-function toggleSelectMode() {
-  selecting.value = !selecting.value
-  if (!selecting.value) {
-    selected.value = []
-    tagging.value = false
-    tagInput.value = ''
-  }
-}
-
-function isSelected(id) {
-  return selected.value.includes(id)
-}
-
-function toggleSelect(id) {
-  const i = selected.value.indexOf(id)
-  if (i === -1) selected.value = selected.value.concat(id)
-  else selected.value = selected.value.filter((x) => x !== id)
-}
-
 function openTagInput() {
   tagging.value = true
   nextTick(() => tagInputRef.value && tagInputRef.value.focus())
@@ -1218,17 +1197,6 @@ async function retryLoad() {
 
 /* ---------- Toast ---------- */
 
-function showToast(text, action, onAction) {
-  clearTimeout(toastTimer)
-  toast.value = { text, action, onAction }
-  toastTimer = setTimeout(() => (toast.value = null), action ? 6000 : 2600)
-}
-
-function runToastAction() {
-  const fn = toast.value && toast.value.onAction
-  toast.value = null
-  if (fn) fn()
-}
 </script>
 
 <style scoped>
