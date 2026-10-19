@@ -122,7 +122,7 @@ logs/app.log   异常日志
 
 ## 测试
 
-14 套脚本，全部在真实 Electron 里跑（真窗口、真 SQLite、真文件系统），不是 mock。
+15 套脚本，全部在真实 Electron 里跑（真窗口、真 SQLite、真文件系统），不是 mock。
 其中 4 套是纯数据/纯逻辑，无头环境也能跑：
 
 ```bash
@@ -137,6 +137,7 @@ npm run test:logger      #  9 项  日志轮转：超 2MB 只留一份 app.log.1
 npm run test:assets-scan # 11 项  图片孤儿扫描的纯逻辑（引用提取 / 孤儿判定）
 npm run test:logic       # 17 项  展示逻辑：剥标签 / 时间格式 / 按天分组
 npm run test:recovery    #  8 项  渲染进程崩溃后的自动重载限流
+npm run test:ipc-guard   # 22 项  IPC 入参收敛：limit 上限 / 非法排序 / id 与标签数量
 npm run test:groups      # 11 项  时间分组与键盘导航
 npm run test:paging      #  7 项  灌 300 条验分页与滚动续载
 npm run test:batch       #  5 项  多选批量删除（端到端：点勾选 → 点删除 → 查库）

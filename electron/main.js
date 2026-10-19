@@ -21,6 +21,7 @@ const assets = require('./assets')
 const nav = require('./nav')
 const { createLogger } = require('./logger')
 const { createReloadGate } = require('./recovery')
+const guard = require('./ipc-guard')
 
 // 必须在 app ready 之前注册，否则自定义协议拿不到安全上下文
 assets.registerScheme()
@@ -412,8 +413,8 @@ function registerIpc() {
   })
 
   /* 笔记 */
-  ipcMain.handle('notes:bootstrap', (_e, opts) => db.bootstrap(opts || {}))
-  ipcMain.handle('notes:list', (_e, opts) => db.listNotes(opts || {}))
+  ipcMain.handle('notes:bootstrap', (_e, opts) => db.bootstrap(guard.listOpts(opts)))
+  ipcMain.handle('notes:list', (_e, opts) => db.listNotes(guard.listOpts(opts)))
   ipcMain.handle('notes:trash', () => db.listTrash())
   ipcMain.handle('notes:tags', () => db.listTags())
   ipcMain.handle('notes:stats', () => db.getStats())
@@ -425,10 +426,10 @@ function registerIpc() {
   ipcMain.handle('notes:purge', (_e, id) => db.purge(id))
   ipcMain.handle('notes:emptyTrash', () => db.emptyTrash())
   ipcMain.handle('notes:exportAll', () => db.exportAll())
-  ipcMain.handle('notes:batchDelete', (_e, ids) => db.batchSoftDelete(ids))
-  ipcMain.handle('notes:renameTag', (_e, from, to) => db.renameTag(from, to))
-  ipcMain.handle('notes:deleteTag', (_e, name) => db.deleteTag(name))
-  ipcMain.handle('notes:addTags', (_e, ids, tags) => db.addTags(ids, tags))
+  ipcMain.handle('notes:batchDelete', (_e, ids) => db.batchSoftDelete(guard.idList(ids)))
+  ipcMain.handle('notes:renameTag', (_e, from, to) => db.renameTag(String(from == null ? '' : from), to))
+  ipcMain.handle('notes:deleteTag', (_e, name) => db.deleteTag(String(name == null ? '' : name)))
+  ipcMain.handle('notes:addTags', (_e, ids, tags) => db.addTags(guard.idList(ids), guard.tagList(tags)))
 
   /* 图片 */
   ipcMain.handle('asset:save', (_e, payload) => {

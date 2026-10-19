@@ -24,6 +24,7 @@
     "test:logger": "electron scripts/test-logger.js",
     "test:logic": "electron scripts/test-logic.js",
     "test:recovery": "electron scripts/test-recovery.js",
+    "test:ipc-guard": "electron scripts/test-ipc-guard.js",
     "test:edge": "electron scripts/test-edge.js",
     "test:edge2": "electron scripts/test-edge2.js",
     "shots": "electron scripts/shots.js",
