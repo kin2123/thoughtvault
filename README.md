@@ -204,6 +204,24 @@ SUM:   SCAN  notes USING COVERING INDEX idx_notes_deleted
 规模实测（5 万条）：列表 0.32ms、写入 5ms 级、`quickCheck` 162ms、备份 121ms（都在首屏之后）。
 **唯一还在退化的交互查询是 `listTags`**（0.87ms → 25.58ms），已经用 `withTags` 按需跳过。
 
+### v0.9.3 续
+
+同一轮里继续往下挖的几处（都带实测或断言）：
+
+- **VACUUM 的坑**：FTS 行用 `notes.rowid` 定位，而 VACUUM 会重排 rowid，
+  所以 `db.vacuum()` 内部固定跟着 `rebuildFts()`，两个动作不能拆开
+- **日志轮转**：`app.log` 超过 2MB 改名 `app.log.1`，只留一份
+- **崩溃自动恢复**：渲染进程异常退出后自动 reload，60 秒内最多两次（无边框窗口白屏没有别的自救手段）
+- **IPC 入参收敛**：`limit` 上限 5000、`sort` 白名单、`ids`/`tags` 数量上限
+- **维护工具**：托盘「压缩数据库」（VACUUM + 重建 FTS）、`npm run scan:assets` 只读列出未引用图片
+- **ESLint**（essential 级）接入，`npm run lint` 0 问题
+- **展示逻辑外移**：`src/lib/text.mjs`，可在 Node 里直接测，App.vue 少 70 行
+
+```bash
+npm run lint        # 0 问题
+npm run test:data   # 9 套 167 项
+```
+
 ## 目录结构
 
 ```
@@ -215,12 +233,18 @@ electron/
   assets.js     图片落盘 + tv-asset 协议
   config.js     设置持久化
   preload.js    contextBridge 暴露的最小接口
+  nav.js        导航边界：哪些 URL 算「应用自己」、外链只放行 http/https
+  logger.js     文件日志 + 2MB 轮转
+  recovery.js   渲染进程崩溃后的重载限流
+  ipc-guard.js  IPC 入参收敛（limit / ids / tags 上限）
+  assets-scan.js 图片引用提取与孤儿判定（只读）
 src/
   App.vue       捕获框、列表、Markdown、多选、排序、主题、引导
   api.js        桌面 / 浏览器 双实现，接口一致
   style.css     主题令牌 + Markdown 排版
+  lib/text.mjs  剥标签 / 时间格式 / 按天分组（可在 Node 里直接测）
   components/   SettingsPanel / TagManager / TrashView
-scripts/        98 项断言的测试脚本 + 两个基准 + 截图生成
+scripts/        9 套数据层测试 + 5 套界面测试 + 三个基准/工具
 ```
 
 ## 已知边界
