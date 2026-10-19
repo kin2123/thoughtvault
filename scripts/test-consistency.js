@@ -16,22 +16,22 @@ function check(name, ok, extra) {
 
 const dbSrc = read('electron/db.js')
 const apiSrc = read('src/api.js')
-const appSrc = read('src/App.vue')
+const textSrc = read('src/lib/text.mjs')
 
 /* 1. 标签正则：main 解析、浏览器兜底解析、渲染层剥离，三处必须是同一套字符集 */
 const TAG_RE_LITERAL = /const TAG_RE = (\/.*\/[a-z]*)/
 
 const dbTag = (dbSrc.match(TAG_RE_LITERAL) || [])[1]
 const apiTag = (apiSrc.match(TAG_RE_LITERAL) || [])[1]
-const appTag = (appSrc.match(TAG_RE_LITERAL) || [])[1]
+const textTag = (textSrc.match(TAG_RE_LITERAL) || [])[1]
 
-check('三处都定义了 TAG_RE', Boolean(dbTag && apiTag && appTag), `${dbTag} | ${apiTag} | ${appTag}`)
+check('三处都定义了 TAG_RE', Boolean(dbTag && apiTag && textTag), `${dbTag} | ${apiTag} | ${textTag}`)
 check('electron/db.js 与 src/api.js 的标签正则一致', dbTag === apiTag, `${dbTag} vs ${apiTag}`)
-check('渲染层剥标签用的是同一套字符集', dbTag === appTag, `${dbTag} vs ${appTag}`)
+check('展示层剥标签用的是同一套字符集', dbTag === textTag, `${dbTag} vs ${textTag}`)
 
 /* 2. 版本号只允许由 package.json / 主进程提供，渲染层不能写死 */
 const hardcoded = /appVersion:\s*'\d+\.\d+\.\d+'/
-check('src/ 里没有写死的版本号', !hardcoded.test(apiSrc) && !hardcoded.test(appSrc))
+check('src/ 里没有写死的版本号', !hardcoded.test(apiSrc) && !hardcoded.test(textSrc) && !hardcoded.test(read('src/App.vue')))
 
 /* 3. 标签字符合集：main 校验、浏览器兜底校验，两处必须一致 */
 const NAME_RE_LITERAL = /const TAG_NAME_RE = (\/.*\/[a-z]*)/

@@ -296,8 +296,8 @@ import {
 import SettingsPanel from './components/SettingsPanel.vue'
 import TagManager from './components/TagManager.vue'
 import TrashView from './components/TrashView.vue'
+import { buildGroups, fmtTime as fmt, stripTags } from './lib/text.mjs'
 
-const TAG_RE = /#([\p{L}\p{N}_\-\/]+)/gu
 const PAGE_SIZE = 80
 // 图片要整个 buffer 走结构化克隆过 IPC，10MB 截图会带来 20MB+ 的峰值
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024
@@ -523,51 +523,10 @@ const DEFAULT_OPEN_DAYS = 7
 const collapsedKeys = ref([])
 const expandedKeys = ref([])
 
-const useGroups = computed(() => (config.value.sort || 'updated') !== 'length')
-
-function pad2(n) {
-  return String(n).padStart(2, '0')
-}
-
-function groupTs(n) {
-  return (config.value.sort || 'updated') === 'created' ? n.createdAt : n.updatedAt
-}
-
-function dayKey(n) {
-  const d = new Date(groupTs(n))
-  return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate())
-}
-
-function dayLabel(ts) {
-  const d = new Date(ts)
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-  const diff = Math.round((today - day) / 86400000)
-  if (diff === 0) return '今天'
-  if (diff === 1) return '昨天'
-  const week = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getDay()]
-  if (d.getFullYear() === now.getFullYear()) {
-    return `${d.getMonth() + 1}月${d.getDate()}日 ${week}`
-  }
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
-}
-
-const groups = computed(() => {
-  if (!useGroups.value) return [{ key: '_all', label: null, ts: 0, items: items.value }]
-  const out = []
-  const index = new Map()
-  for (const n of items.value) {
-    const key = dayKey(n)
-    if (!index.has(key)) {
-      const g = { key, label: dayLabel(groupTs(n)), ts: groupTs(n), items: [] }
-      index.set(key, g)
-      out.push(g)
-    }
-    index.get(key).items.push(n)
-  }
-  return out
-})
+// 分组算法在 src/lib/text.js（可在 Node 里测），这里只保留折叠状态
+const groups = computed(() =>
+  buildGroups(items.value, { sort: config.value.sort || 'updated', now: Date.now() })
+)
 
 /** 手动展开优先，其次手动收起，都不是则按「7 天内默认展开」 */
 function isCollapsed(g) {
@@ -693,10 +652,7 @@ const draftHint = computed(() => {
 
 // 标签由 main 侧从 content 解析（浏览器预览由 api.js 负责），
 // 渲染层只负责把标签从展示文本里去掉，不再产出标签数组。
-
-function stripTags(text) {
-  return String(text).replace(TAG_RE, '').replace(/[ \t]+\n/g, '\n').trim()
-}
+// stripTags / fmt / buildGroups 都在 src/lib/text.js，这里只保留带缓存的渲染。
 
 function plain(text) {
   return stripTags(text)
@@ -710,20 +666,6 @@ function mdHtml(n) {
   if (mdCache.size > 400) mdCache.clear()
   mdCache.set(key, html)
   return html
-}
-
-function fmt(ts) {
-  const d = new Date(ts)
-  const now = new Date()
-  const pad = (x) => String(x).padStart(2, '0')
-  const hm = pad(d.getHours()) + ':' + pad(d.getMinutes())
-  if (d.toDateString() === now.toDateString()) return '今天 ' + hm
-  const y = new Date(now.getTime() - 86400000)
-  if (d.toDateString() === y.toDateString()) return '昨天 ' + hm
-  if (d.getFullYear() === now.getFullYear()) {
-    return pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + hm
-  }
-  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
 }
 
 /* ---------- 输入 ---------- */
