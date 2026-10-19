@@ -6,3 +6,10 @@ release*/
 .DS_Store
 Thumbs.db
 .workbuddy/
+
+# 内部规划/分析文档：只留本地，不发布到公开仓库
+产品定位.md
+优化清单.md
+缺口清单.md
+项目整合总览.md
+优化分析-*.md
