@@ -17,6 +17,7 @@ function check(name, ok, extra) {
 app.whenReady().then(() => {
   const db = require('../electron/db')
   db.open()
+  check('open() 之后 isOpen 为 true', db.isOpen() === true)
 
   const a = db.createNote({ content: '今天学习 SQLite 的 FTS5 索引 #开发 #数据库' })
   const b = db.createNote({ content: '面试复盘：FastAPI 依赖注入答得太浅 #面试' })

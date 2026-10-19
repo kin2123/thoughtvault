@@ -156,6 +156,16 @@
         <p v-if="hasMore" class="more">还有更多，继续往下滚…</p>
       </section>
 
+      <section v-else-if="loadError" class="empty error">
+        <div class="empty-mark"></div>
+        <p class="empty-title">读取数据失败</p>
+        <p class="empty-sub">笔记可能还在本机，先别重装或换目录。</p>
+        <p class="empty-detail">{{ loadError }}</p>
+        <p class="empty-detail">数据目录：{{ config.dataDir }}</p>
+        <button class="retry" @click="retryLoad">重试</button>
+        <button class="retry" @click="doOpenDir()">打开数据目录</button>
+      </section>
+
       <section v-else class="empty">
         <div class="empty-mark"></div>
         <p class="empty-title">{{ stats.active ? '没有匹配的笔记' : '还没有任何记录' }}</p>
@@ -331,6 +341,8 @@ const config = ref({
 })
 
 const toast = ref(null)
+// 首屏读不出来时的原因（数据库损坏、目录没权限、db 没打开）
+const loadError = ref('')
 const inputRef = ref(null)
 const searchRef = ref(null)
 const listRef = ref(null)
@@ -353,7 +365,13 @@ onMounted(async () => {
   config.value = cfg
   applyAppearance()
 
-  await refreshAll()
+  // 这里不能裸 await：db 打不开时 main 侧只记日志，IPC 会 reject，
+  // 原来 unhandled 之后 items 为空，界面显示「还没有任何记录」——像数据丢了。
+  try {
+    await refreshAll()
+  } catch (err) {
+    loadError.value = config.value.dbError || cleanError(err)
+  }
 
   if (savedDraft) {
     draft.value = savedDraft
@@ -376,6 +394,7 @@ onMounted(async () => {
   })
 
   window.addEventListener('keydown', onGlobalKey)
+  window.addEventListener('tv-error', onGlobalError)
 
   mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
   mediaQuery.addEventListener('change', applyAppearance)
@@ -385,6 +404,7 @@ onBeforeUnmount(() => {
   offFocusInput && offFocusInput()
   offOpenPanel && offOpenPanel()
   window.removeEventListener('keydown', onGlobalKey)
+  window.removeEventListener('tv-error', onGlobalError)
   clearTimeout(draftTimer)
   clearTimeout(searchTimer)
   clearTimeout(toastTimer)
@@ -1052,6 +1072,29 @@ async function doOpenDir(which) {
   if (typeof res === 'string' && res) showToast('无法打开目录：' + res)
 }
 
+/* ---------- 错误呈现 ---------- */
+
+/** Electron 的 IPC 异常带 "Error invoking remote method 'x': Error: " 前缀，剥掉更像人话 */
+function cleanError(err) {
+  return String((err && err.message) || err || '未知错误')
+    .replace(/^Error invoking remote method '[^']*':\s*/, '')
+    .replace(/^Error:\s*/, '')
+}
+
+/** 渲染层任何未捕获异常/未处理 Promise 都从这里冒出来（src/main.js 统一上报） */
+function onGlobalError(e) {
+  showToast('操作失败：' + cleanError(e.detail))
+}
+
+async function retryLoad() {
+  loadError.value = ''
+  try {
+    await refreshAll()
+  } catch (err) {
+    loadError.value = config.value.dbError || cleanError(err)
+  }
+}
+
 /* ---------- Toast ---------- */
 
 function showToast(text, action, onAction) {
@@ -1574,6 +1617,37 @@ function runToastAction() {
 .empty-sub {
   font-size: 12px;
   color: var(--text-faint);
+}
+
+/* 读取失败：不能和「空列表」长得一样，否则用户以为数据丢了 */
+.empty.error .empty-mark {
+  border-style: solid;
+  border-color: var(--danger);
+}
+
+.empty-detail {
+  max-width: 440px;
+  margin-top: 2px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-faint);
+  text-align: center;
+  word-break: break-word;
+}
+
+.retry {
+  margin-top: 6px;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.retry:hover {
+  border-color: var(--accent-line);
+  color: var(--text);
 }
 
 .statusbar {

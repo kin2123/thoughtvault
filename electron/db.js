@@ -128,6 +128,11 @@ function close() {
   }
 }
 
+/** 供调用方在动手之前判断，避免拿到 null 抛 TypeError */
+function isOpen() {
+  return Boolean(db)
+}
+
 /* ---------- 标签解析 ---------- */
 // 与渲染层保持同一套字符集；main 侧再解析一遍，
 // 这样任何入口（IPC 直调、批量打标签、将来加的 CLI）都不会和界面不一致
@@ -626,6 +631,7 @@ function explain(sql, params) {
 module.exports = {
   open,
   close,
+  isOpen,
   dbFile,
   segment,
   toFtsQuery,

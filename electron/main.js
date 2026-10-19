@@ -32,6 +32,8 @@ let cfg = null
 let activeHotkey = null
 let suppressBlurHide = false
 let boundsTimer = null
+// 数据库没打开时的原因。渲染层据此显示错误态，而不是「还没有任何记录」
+let dbError = null
 
 // 纯文本工具用不上硬件加速，关掉能显著降低内存与老显卡/虚拟机的崩溃率。
 // 需要开回来时设环境变量 APP_GPU=1。
@@ -231,6 +233,20 @@ function openPanel(panel) {
   win.webContents.send('ui:open', panel)
 }
 
+/* ---------- 备份 ---------- */
+
+// 托盘菜单和 IPC 各写过一遍同样的逻辑，合并成一处，顺便挡住「数据库没打开」
+function backupNowManually() {
+  if (!db.isOpen()) return { ok: false, error: '数据库未就绪，请重启应用' }
+  const res = db.backupTo(store.backupsDir())
+  if (res.ok) {
+    store.pruneBackups()
+    cfg.lastBackupAt = res.at
+    config.save(cfg)
+  }
+  return res
+}
+
 function createTray() {
   try {
     let image = nativeImage.createFromPath(iconPath())
@@ -251,14 +267,7 @@ function createTray() {
       {
         label: '立即备份',
         click: () => {
-          const res = db.backupTo(store.backupsDir())
-          if (res.ok) {
-            store.pruneBackups()
-            if (cfg) {
-              cfg.lastBackupAt = res.at
-              config.save(cfg)
-            }
-          }
+          const res = backupNowManually()
           logLine(res.ok ? '手动备份: ' + res.name : '手动备份失败: ' + res.error)
         }
       },
@@ -288,7 +297,8 @@ function publicConfig() {
     isCustomDataDir: paths.isCustom(),
     defaultDataDir: app.getPath('userData'),
     backupsDir: store.backupsDir(),
-    isPackaged: app.isPackaged
+    isPackaged: app.isPackaged,
+    dbError
   }
 }
 
@@ -410,15 +420,7 @@ function registerIpc() {
   ipcMain.handle('draft:clear', () => store.clearDraft())
 
   /* 备份 */
-  ipcMain.handle('backup:now', () => {
-    const res = db.backupTo(store.backupsDir())
-    if (res.ok) {
-      store.pruneBackups()
-      cfg.lastBackupAt = res.at
-      config.save(cfg)
-    }
-    return res
-  })
+  ipcMain.handle('backup:now', () => backupNowManually())
   ipcMain.handle('backup:list', () => store.listBackups())
 
   ipcMain.handle('app:openDir', (_e, which) => {
@@ -484,7 +486,7 @@ let maintenanceDone = false
 function runStartupMaintenance() {
   if (maintenanceDone) return
   maintenanceDone = true
-
+  if (!db.isOpen()) return
   // 日常启动用快速校验就够：能抓到页损坏，代价只有完整校验的 1/3
   try {
     const ok = db.quickCheck()
@@ -551,6 +553,7 @@ if (!gotLock) {
       const purged = db.purgeExpired()
       if (purged) logLine(`回收站自动清理 ${purged} 条`)
     } catch (err) {
+      dbError = (err && err.message) || String(err)
       logLine('数据库初始化失败: ' + (err && err.stack ? err.stack : err))
     }
 
