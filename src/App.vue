@@ -210,9 +210,11 @@
       v-if="settingsOpen"
       :config="config"
       :note-count="stats.active"
+      :backups="backupItems"
       @close="settingsOpen = false"
       @update="patchConfig"
       @backup="doBackup"
+      @restore-backup="doRestoreBackup"
       @export="doExport"
       @import="doImport"
       @open-dir="doOpenDir"
@@ -260,6 +262,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import MarkdownIt from 'markdown-it'
 import {
   addTagsToNotes,
+  backupList,
   backupNow,
   batchDeleteNotes,
   clearDraft,
@@ -289,6 +292,7 @@ import {
   relocateDataDir,
   resetDataDir,
   renameTag,
+  restoreBackup,
   restoreNote,
   saveAsset,
   saveDraft,
@@ -344,6 +348,7 @@ const config = ref({
   onboarded: true
 })
 
+const backupItems = ref([])
 const toast = ref(null)
 // 首屏读不出来时的原因（数据库损坏、目录没权限、db 没打开）
 const loadError = ref('')
@@ -953,10 +958,35 @@ async function doBackup() {
   const res = await backupNow()
   if (res && res.ok) {
     config.value = { ...config.value, lastBackupAt: res.at }
+    backupItems.value = await backupList()
     showToast('已备份：' + res.name)
   } else {
     showToast((res && res.error) || '备份失败')
   }
+}
+
+// 打开设置时才去拉备份列表：平时不需要，多一次 IPC 没意义
+watch(settingsOpen, async (open) => {
+  if (!open) return
+  try {
+    backupItems.value = await backupList()
+  } catch (_) {
+    backupItems.value = []
+  }
+})
+
+/** 恢复会把整个库换掉，所以列表、标签、计数全部重来一遍 */
+async function doRestoreBackup(item) {
+  if (!item || !item.name) return
+  const res = await restoreBackup(item.name)
+  if (!res || res.canceled) return
+  if (!res.ok) return showToast(res.error || '恢复失败')
+
+  loadError.value = ''
+  resetPaging()
+  await refreshAll()
+  backupItems.value = await backupList()
+  showToast('已从备份恢复')
 }
 
 async function doExport(kind) {

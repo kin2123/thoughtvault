@@ -144,6 +144,17 @@
             </div>
             <button class="ghost" @click="$emit('open-dir', 'backups')">打开</button>
           </div>
+          <div v-if="backups.length" class="backup-list">
+            <div v-for="b in backups" :key="b.name" class="backup-item">
+              <span class="b-when">{{ fmtAt(b.at) }}</span>
+              <span class="b-size">{{ fmtSize(b.size) }}</span>
+              <button class="ghost" @click="$emit('restore-backup', b)">恢复</button>
+            </div>
+            <p class="note">
+              恢复会用这份备份覆盖当前笔记。动手前会先把现在的内容另存一份备份，
+              反悔了还能再换回来。
+            </p>
+          </div>
         </section>
 
         <section>
@@ -185,7 +196,8 @@ import { prettyHotkey, setHotkey } from '../api'
 
 const props = defineProps({
   config: { type: Object, required: true },
-  noteCount: { type: Number, default: 0 }
+  noteCount: { type: Number, default: 0 },
+  backups: { type: Array, default: () => [] }
 })
 
 const emit = defineEmits([
@@ -198,7 +210,8 @@ const emit = defineEmits([
   'toast',
   'manage-tags',
   'change-data-dir',
-  'reset-data-dir'
+  'reset-data-dir',
+  'restore-backup'
 ])
 
 const themes = [
@@ -223,6 +236,18 @@ const backupText = computed(() => {
   const pad = (n) => String(n).padStart(2, '0')
   return `上次备份：${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 })
+
+function fmtAt(ms) {
+  const d = new Date(ms)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function fmtSize(bytes) {
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1048576) return (bytes / 1024).toFixed(0) + ' KB'
+  return (bytes / 1048576).toFixed(1) + ' MB'
+}
 
 function toggleLaunchAtLogin() {
   if (!props.config.isPackaged) {
@@ -520,6 +545,34 @@ h4 {
   color: var(--text-faint);
   line-height: 1.6;
   margin: 2px 0 6px;
+}
+
+.backup-list {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.backup-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.b-when,
+.b-size {
+  font-variant-numeric: tabular-nums;
+}
+
+.b-size {
+  flex: 1;
+  color: var(--text-faint);
 }
 
 .err {

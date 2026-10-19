@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('vault', {
   /* 备份与导入导出 */
   backupNow: () => ipcRenderer.invoke('backup:now'),
   backupList: () => ipcRenderer.invoke('backup:list'),
+  restoreBackup: (name) => ipcRenderer.invoke('backup:restore', name),
   exportFile: (payload) => ipcRenderer.invoke('export:file', payload),
   importJson: () => ipcRenderer.invoke('import:json'),
   openDir: (which) => ipcRenderer.invoke('app:openDir', which),

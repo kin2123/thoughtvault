@@ -397,6 +397,12 @@ export async function backupList() {
   return []
 }
 
+/** 用备份覆盖当前数据；主进程会先弹确认框、并另存一份当前数据 */
+export async function restoreBackup(name) {
+  if (native) return native.restoreBackup(name)
+  return { ok: false, error: '仅桌面版支持恢复备份' }
+}
+
 export async function openDir(which) {
   if (native) return native.openDir(which)
   return null

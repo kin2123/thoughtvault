@@ -446,6 +446,42 @@ function registerIpc() {
   ipcMain.handle('backup:now', () => backupNowManually())
   ipcMain.handle('backup:list', () => store.listBackups())
 
+  // 从备份恢复：只接受备份目录里的文件名，路径由主进程拼，不接受渲染层传来的路径
+  ipcMain.handle('backup:restore', async (_e, name) => {
+    if (!db.isOpen()) return { ok: false, error: '数据库未就绪，请重启应用' }
+    const base = path.basename(String(name || ''))
+    const file = path.join(store.backupsDir(), base)
+    if (!base || !fs.existsSync(file)) return { ok: false, error: '备份文件不存在' }
+
+    suppressBlurHide = true
+    try {
+      const found = store.listBackups().find((b) => b.name === base)
+      const when = found ? new Date(found.at).toLocaleString('zh-CN') : base
+      const choice = await dialog.showMessageBox(win, {
+        type: 'warning',
+        buttons: ['用这份备份覆盖', '取消'],
+        defaultId: 1,
+        cancelId: 1,
+        message: '要恢复这份备份吗？',
+        detail:
+          when +
+          '\n\n当前笔记会被替换成这份备份里的内容。\n' +
+          '恢复前会先把当前数据另存一份备份，所以后悔了还能再换回来。'
+      })
+      if (choice.response !== 0) return { ok: false, canceled: true }
+
+      // 先把当前数据存一份，否则「恢复」本身就成了不可逆操作
+      const safety = backupNowManually()
+      if (!safety.ok) return { ok: false, error: '无法备份当前数据，已中止：' + safety.error }
+
+      const res = db.restoreFrom(file)
+      logLine('从备份恢复 ' + base + '：' + (res.ok ? '成功' : res.error))
+      return res
+    } finally {
+      suppressBlurHide = false
+    }
+  })
+
   ipcMain.handle('app:openDir', (_e, which) => {
     const target = which === 'backups' ? store.backupsDir() : store.userDir()
     return shell.openPath(target)
