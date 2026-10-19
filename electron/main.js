@@ -384,7 +384,17 @@ function registerIpc() {
   ipcMain.handle('config:get', () => publicConfig())
 
   ipcMain.handle('config:set', (_e, patch) => {
-    const allowed = ['hideOnBlur', 'launchAtLogin', 'theme', 'fontSize', 'markdown', 'sort', 'onboarded']
+    const allowed = [
+      'hideOnBlur',
+      'launchAtLogin',
+      'theme',
+      'fontSize',
+      'accent',
+      'density',
+      'markdown',
+      'sort',
+      'onboarded'
+    ]
     for (const key of allowed) {
       if (key in patch) cfg[key] = patch[key]
     }

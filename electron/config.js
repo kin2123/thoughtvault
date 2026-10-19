@@ -9,6 +9,8 @@ const DEFAULTS = {
   launchAtLogin: false,
   theme: 'system',
   fontSize: 'm',
+  accent: 'violet',
+  density: 'cozy',
   markdown: true,
   sort: 'updated',
   onboarded: false,

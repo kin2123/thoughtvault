@@ -88,6 +88,41 @@
           </div>
           <div class="row">
             <div class="label">
+              强调色
+              <span>按钮、标签、选中态</span>
+            </div>
+            <div class="swatches">
+              <button
+                v-for="a in accents"
+                :key="a.value"
+                class="swatch"
+                :class="{ on: (config.accent || 'violet') === a.value }"
+                :style="{ '--swatch': a.color }"
+                :title="a.label"
+                @click="$emit('update', { accent: a.value })"
+              >
+                <i></i>
+              </button>
+            </div>
+          </div>
+          <div class="row">
+            <div class="label">
+              列表密度
+              <span>紧凑模式一屏能多看两条</span>
+            </div>
+            <div class="segs">
+              <button
+                v-for="d in densities"
+                :key="d.value"
+                :class="{ on: (config.density || 'cozy') === d.value }"
+                @click="$emit('update', { density: d.value })"
+              >
+                {{ d.label }}
+              </button>
+            </div>
+          </div>
+          <div class="row">
+            <div class="label">
               Markdown 渲染
               <span>关闭后只显示纯文本</span>
             </div>
@@ -224,6 +259,18 @@ const sizes = [
   { value: 's', label: '小' },
   { value: 'm', label: '中' },
   { value: 'l', label: '大' }
+]
+
+const accents = [
+  { value: 'violet', label: '紫', color: '#8b7cf8' },
+  { value: 'blue', label: '蓝', color: '#6b8afd' },
+  { value: 'teal', label: '青', color: '#3fbfa8' },
+  { value: 'amber', label: '琥珀', color: '#e0a94a' }
+]
+
+const densities = [
+  { value: 'cozy', label: '舒适' },
+  { value: 'compact', label: '紧凑' }
 ]
 
 const recording = ref(false)
@@ -516,6 +563,44 @@ h4 {
   border-radius: 8px;
   overflow: hidden;
   flex: none;
+}
+
+/* 强调色：四个色块，选中的用一个内圈提示 */
+.swatches {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+.swatch {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.swatch i {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 5px;
+  background: var(--swatch);
+}
+
+.swatch:hover {
+  border-color: var(--border);
+  background: var(--surface-2);
+}
+
+.swatch.on {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 .segs button {

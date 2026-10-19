@@ -24,6 +24,13 @@
   --ui-size: 13px;
   --caption: 11.5px;
 
+  /* 列表密度：卡片内边距 / 卡片间距 / 正文行高 */
+  --note-pad-y: var(--s3);
+  --note-pad-x: var(--s4);
+  --note-gap: var(--s2);
+  --note-leading: 1.6;
+  --md-leading: 1.68;
+
   /* ---- 深色：靠明度分层，不靠阴影 ---- */
   --bg: #101014;
   --surface: #17171d;
@@ -87,8 +94,66 @@
   --sel: rgba(98, 80, 216, 0.18);
 }
 
-:root[data-size='s'] {
-  --content-size: 13.5px;
+/* =========================================================
+   强调色预设
+   只覆盖 accent 系列令牌，其余配色不动。
+   默认的紫不写在这里（:root 里就是它），加规则反而容易两边不一致。
+   ========================================================= */
+:root[data-accent='blue'] {
+  --accent: #6b8afd;
+  --accent-soft: rgba(107, 138, 253, 0.16);
+  --accent-line: #3a4a8a;
+  --accent-text: #c0cdff;
+  --focus: rgba(107, 138, 253, 0.55);
+  --sel: rgba(107, 138, 253, 0.28);
+}
+
+:root[data-theme='light'][data-accent='blue'] {
+  --accent: #3a63e0;
+  --accent-soft: rgba(58, 99, 224, 0.1);
+  --accent-line: #b0bef0;
+  --accent-text: #2f4fbf;
+  --focus: rgba(58, 99, 224, 0.45);
+  --sel: rgba(58, 99, 224, 0.18);
+}
+
+:root[data-accent='teal'] {
+  --accent: #3fbfa8;
+  --accent-soft: rgba(63, 191, 168, 0.16);
+  --accent-line: #2c6e63;
+  --accent-text: #a9e7dc;
+  --focus: rgba(63, 191, 168, 0.55);
+  --sel: rgba(63, 191, 168, 0.28);
+}
+
+:root[data-theme='light'][data-accent='teal'] {
+  --accent: #0f8f7a;
+  --accent-soft: rgba(15, 143, 122, 0.1);
+  --accent-line: #96d5c9;
+  --accent-text: #0a6b5c;
+  --focus: rgba(15, 143, 122, 0.45);
+  --sel: rgba(15, 143, 122, 0.18);
+}
+
+:root[data-accent='amber'] {
+  --accent: #e0a94a;
+  --accent-soft: rgba(224, 169, 74, 0.16);
+  --accent-line: #7a5a22;
+  --accent-text: #f0d09a;
+  --focus: rgba(224, 169, 74, 0.55);
+  --sel: rgba(224, 169, 74, 0.28);
+}
+
+:root[data-theme='light'][data-accent='amber'] {
+  --accent: #b57b12;
+  --accent-soft: rgba(181, 123, 18, 0.1);
+  --accent-line: #e0c48d;
+  --accent-text: #8a5c08;
+  --focus: rgba(181, 123, 18, 0.45);
+  --sel: rgba(181, 123, 18, 0.18);
+}
+
+:root[data-size='s'] {  --content-size: 13.5px;
   --ui-size: 12.5px;
   --caption: 11px;
 }
@@ -97,6 +162,15 @@
   --content-size: 16px;
   --ui-size: 14px;
   --caption: 12.5px;
+}
+
+/* 紧凑密度：卡片更扁、间距更小、行高收紧，一屏能多看两条 */
+:root[data-density='compact'] {
+  --note-pad-y: 7px;
+  --note-pad-x: 13px;
+  --note-gap: 4px;
+  --note-leading: 1.45;
+  --md-leading: 1.5;
 }
 
 * {
@@ -178,7 +252,7 @@ textarea:focus-visible {
 
 .md-body {
   font-size: var(--content-size);
-  line-height: 1.68;
+  line-height: var(--md-leading);
   color: var(--text-strong);
   word-break: break-word;
 }

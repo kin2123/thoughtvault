@@ -304,6 +304,7 @@ import SettingsPanel from './components/SettingsPanel.vue'
 import TagManager from './components/TagManager.vue'
 import TrashView from './components/TrashView.vue'
 import { buildGroups, fmtTime as fmt, stripTags } from './lib/text.mjs'
+import { normalizeAccent, normalizeDensity } from './lib/prefs.mjs'
 
 const PAGE_SIZE = 80
 // 图片要整个 buffer 走结构化克隆过 IPC，10MB 截图会带来 20MB+ 的峰值
@@ -343,6 +344,8 @@ const config = ref({
   appVersion: '',
   theme: 'system',
   fontSize: 'm',
+  accent: 'violet',
+  density: 'cozy',
   markdown: true,
   sort: 'updated',
   onboarded: true
@@ -431,6 +434,8 @@ function applyAppearance() {
   const root = document.documentElement
   root.dataset.theme = dark ? 'dark' : 'light'
   root.dataset.size = config.value.fontSize || 'm'
+  root.dataset.accent = normalizeAccent(config.value.accent)
+  root.dataset.density = normalizeDensity(config.value.density)
   isDark.value = dark
 }
 
@@ -1368,7 +1373,7 @@ function runToastAction() {
   padding: var(--s1) var(--s4) var(--s3);
   display: flex;
   flex-direction: column;
-  gap: var(--s2);
+  gap: var(--note-gap);
 }
 
 .group-head {
@@ -1421,7 +1426,7 @@ function runToastAction() {
 }
 
 .note {
-  padding: var(--s3) var(--s4);
+  padding: var(--note-pad-y) var(--note-pad-x);
   background: var(--surface);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius);
@@ -1492,6 +1497,7 @@ function runToastAction() {
   white-space: pre-wrap;
   word-break: break-word;
   font-size: var(--content-size);
+  line-height: var(--note-leading);
   color: var(--text-strong);
 }
 

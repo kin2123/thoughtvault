@@ -19,6 +19,7 @@ process.on('uncaughtException', (e) => {
 app.whenReady().then(async () => {
   const mod = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'lib', 'text.mjs')).toString())
   const { stripTags, fmtTime, dayLabel, buildGroups } = mod
+  const prefs = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'lib', 'prefs.mjs')).toString())
 
   const now = new Date(2026, 9, 19, 12, 0, 0).getTime()
   const at = (y, m, d, hh = 9, mm = 5) => new Date(y, m - 1, d, hh, mm).getTime()
@@ -61,6 +62,14 @@ app.whenReady().then(async () => {
   const byLength = buildGroups(items, { sort: 'length', now })
   check('按篇幅排序不分组', byLength.length === 1 && byLength[0].label === null && byLength[0].key === '_all')
   check('空列表返回空数组', buildGroups([], { now }).length === 0)
+
+  /* 外观偏好：非法值必须回落，否则 dataset 上会挂个不存在的名字 */
+  check('强调色: 合法值保留', prefs.normalizeAccent('teal') === 'teal')
+  check('强调色: 非法值回落 violet', prefs.normalizeAccent('rainbow') === 'violet')
+  check('强调色: 空值回落 violet', prefs.normalizeAccent(undefined) === 'violet')
+  check('密度: 合法值保留', prefs.normalizeDensity('compact') === 'compact')
+  check('密度: 空串回落 cozy', prefs.normalizeDensity('') === 'cozy')
+  check('预设数量: 4 种强调色 / 2 种密度', prefs.ACCENTS.length === 4 && prefs.DENSITIES.length === 2)
 
   console.log(`\n合计 ${pass + fail} 项，通过 ${pass}，失败 ${fail}`)
   app.exit(fail ? 1 : 0)
