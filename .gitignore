@@ -13,3 +13,19 @@ Thumbs.db
 缺口清单.md
 项目整合总览.md
 优化分析-*.md
+
+# 应用数据：若把「数据目录」指向仓库根（便携用法），这几类文件不能被提交
+/notes.db
+/notes.db-wal
+/notes.db-shm
+/draft.json
+/assets/
+/backups/
+/logs/
+
+# 本地工具产物
+.eslintcache
+*.tmp
+*.bak
+.vscode/
+.idea/
