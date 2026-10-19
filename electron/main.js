@@ -20,6 +20,7 @@ const { createRelocator } = require('./relocate')
 const assets = require('./assets')
 const nav = require('./nav')
 const { createLogger } = require('./logger')
+const { extractRefs, findOrphans } = require('./assets-scan')
 const { createReloadGate } = require('./recovery')
 const guard = require('./ipc-guard')
 const { needsBackup } = require('./maintenance')
@@ -443,6 +444,30 @@ function registerIpc() {
   ipcMain.handle('notes:addTags', (_e, ids, tags) => db.addTags(guard.idList(ids), guard.tagList(tags)))
 
   /* 图片 */
+  // 只读扫描：列出没有被任何笔记引用的图片，不删任何东西
+  ipcMain.handle('assets:scan', () => {
+    if (!db.isOpen()) return { ok: false, error: '数据库未就绪' }
+    const dir = store.assetsDir()
+    const refs = new Set()
+    db.eachContent((content) => extractRefs(content, refs))
+
+    let files
+    try {
+      files = fs.readdirSync(dir)
+    } catch (_) {
+      files = []
+    }
+
+    const { orphans, referenced } = findOrphans(files, refs)
+    let bytes = 0
+    for (const f of orphans) {
+      try {
+        bytes += fs.statSync(path.join(dir, f)).size
+      } catch (_) {}
+    }
+    return { ok: true, files: files.length, referenced: referenced.length, orphans: orphans.length, bytes }
+  })
+
   ipcMain.handle('asset:save', (_e, payload) => {
     if (!payload || !payload.buffer) return { ok: false, error: '没有收到图片数据' }
     return saveAsset(Buffer.from(payload.buffer), payload.ext || 'png')

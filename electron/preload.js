@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('vault', {
 
   /* 图片 */
   saveAsset: (payload) => ipcRenderer.invoke('asset:save', payload),
+  scanAssets: () => ipcRenderer.invoke('assets:scan'),
 
   /* 草稿 */
   loadDraft: () => ipcRenderer.invoke('draft:load'),

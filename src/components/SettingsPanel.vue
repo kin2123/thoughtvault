@@ -179,6 +179,13 @@
             </div>
             <button class="ghost" @click="$emit('open-dir', 'backups')">打开</button>
           </div>
+          <div class="row">
+            <div class="label">
+              图片清理
+              <span>只统计不删除，确认后再手动处理</span>
+            </div>
+            <button class="ghost" @click="$emit('scan-assets')">检查未引用</button>
+          </div>
           <div v-if="backups.length" class="backup-list">
             <div v-for="b in backups" :key="b.name" class="backup-item">
               <span class="b-when">{{ fmtAt(b.at) }}</span>
@@ -246,7 +253,8 @@ const emit = defineEmits([
   'manage-tags',
   'change-data-dir',
   'reset-data-dir',
-  'restore-backup'
+  'restore-backup',
+  'scan-assets'
 ])
 
 const themes = [

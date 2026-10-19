@@ -274,6 +274,17 @@ app.whenReady().then(() => {
   check('迁移后能搜到迁移前的标签', db.listNotes({ query: '迁移' }).length >= 1)
   db.purge(migNote.id)
 
+  /* eachContent：给维护任务用的逐行正文遍历 */
+  const iterNote = db.createNote({ content: '遍历测试专用 #iter' })
+  let sawIter = false
+  let visited = 0
+  db.eachContent((c) => {
+    visited++
+    if (c.includes('遍历测试专用')) sawIter = true
+  })
+  check('eachContent 能读到每一条正文', sawIter && visited > 0, 'visited=' + visited)
+  db.purge(iterNote.id)
+
   // 完整校验留着（搬迁时用），启动路径改走快速校验，两个都要断言
   check('完整性检查', db.integrityCheck() === 'ok')
   check('快速检查', db.quickCheck() === 'ok', db.quickCheck())

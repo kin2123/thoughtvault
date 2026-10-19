@@ -132,6 +132,7 @@
                   <div v-if="!selecting" class="actions">
                     <button @click.stop="togglePin(n)">{{ n.pinned ? '取消置顶' : '置顶' }}</button>
                     <button @click.stop="startEdit(n)">编辑</button>
+                    <button @click.stop="exportNote(n)">导出</button>
                     <button class="danger" @click.stop="removeItem(n)">删除</button>
                   </div>
                 </div>
@@ -215,6 +216,7 @@
       @update="patchConfig"
       @backup="doBackup"
       @restore-backup="doRestoreBackup"
+      @scan-assets="doScanAssets"
       @export="doExport"
       @import="doImport"
       @open-dir="doOpenDir"
@@ -295,6 +297,7 @@ import {
   restoreBackup,
   restoreNote,
   saveAsset,
+  scanAssets,
   saveDraft,
   setConfig,
   setPinned,
@@ -932,6 +935,13 @@ function onEditKey(e) {
   }
 }
 
+/** 单条导出：只写正文，不套全量导出的表头 */
+async function exportNote(n) {
+  const res = await exportFile({ defaultName: exportFileName('md'), content: n.content + '\n' })
+  if (res && res.ok) showToast('已导出')
+  else if (res && !res.canceled) showToast(res.error || '导出失败')
+}
+
 /* ---------- 筛选与排序 ---------- */
 
 function pickTag(name) {
@@ -1105,6 +1115,15 @@ watch(settingsOpen, async (open) => {
     backupItems.value = []
   }
 })
+
+/** 只读扫描未引用的图片：只报数，不删 */
+async function doScanAssets() {
+  const res = await scanAssets()
+  if (!res || !res.ok) return showToast((res && res.error) || '扫描失败')
+  if (!res.orphans) return showToast('没有发现未引用的图片')
+  const mb = (res.bytes / 1048576).toFixed(1)
+  showToast(`有 ${res.orphans} 张图片没被引用，共 ${mb} MB（未删除）`)
+}
 
 /** 恢复会把整个库换掉，所以列表、标签、计数全部重来一遍 */
 async function doRestoreBackup(item) {

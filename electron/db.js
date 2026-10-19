@@ -762,6 +762,11 @@ function quickCheck() {
   }
 }
 
+/** 逐行取正文，给维护类任务用（不 hydrate 标签，省内存） */
+function eachContent(fn) {
+  for (const row of db.prepare('SELECT content FROM notes').iterate()) fn(row.content)
+}
+
 /** 调试用：返回查询计划，确认走没走索引 */
 function explain(sql, params) {
   return db
@@ -793,6 +798,7 @@ module.exports = {
   listNotes,
   listTrash,
   listTags,
+  eachContent,
   getStats,
   exportAll,
   importNotes,

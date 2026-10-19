@@ -291,6 +291,12 @@ function swapTag(content, from, to) {
     .trim()
 }
 
+/** 只读扫描：有多少图片没被任何笔记引用（不会删） */
+export async function scanAssets() {
+  if (native) return native.scanAssets()
+  return { ok: false, error: '仅桌面版支持扫描图片' }
+}
+
 export async function saveAsset(buffer, ext = 'png') {
   if (native) return native.saveAsset({ buffer, ext })
   try {
