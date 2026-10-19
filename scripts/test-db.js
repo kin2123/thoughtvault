@@ -121,6 +121,22 @@ app.whenReady().then(() => {
   const bak = db.backupTo(path.join(tmp, 'backups'))
   check('备份生成 .db 文件', bak.ok && fs.existsSync(bak.path) && fs.statSync(bak.path).size > 0)
 
+  /* 备份轮转：只保留最近 7 份，按 mtime 从新到旧 */
+  const store = require('../electron/store')
+  const bkDir = store.backupsDir()
+  fs.mkdirSync(bkDir, { recursive: true })
+  const base = Date.now() - 3600000
+  for (let i = 0; i < 10; i++) {
+    const f = path.join(bkDir, `notes-2020010${i % 10}-00000${i % 10}.db`)
+    fs.writeFileSync(f, 'x')
+    const t = new Date(base + i * 1000)
+    fs.utimesSync(f, t, t)
+  }
+  const kept = store.pruneBackups()
+  check('pruneBackups 只保留 7 份', kept.length === 7, 'kept=' + kept.length)
+  check('丢掉的是最旧的 4 份', !kept.some((b) => /notes-2020010[0-3]/.test(b.name)), kept.map((b) => b.name).join(','))
+  check('最新一份仍是刚做的真实备份', kept[0].name === bak.name, kept[0].name + ' vs ' + bak.name)
+
   /* 批量清理：换成 IN 子查询后必须验证三张表都不留孤儿 */
   // 单独开一个连接去数 tags / notes_fts 的真实行数。
   // 不能用 listTags() 验证，它 JOIN 了 notes，孤儿行在那儿是看不见的。
