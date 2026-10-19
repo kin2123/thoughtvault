@@ -453,6 +453,27 @@ function batchSoftDelete(ids) {
 
 /* ---------- 导入与迁移 ---------- */
 
+/**
+ * content 是标签的唯一真相。外部 JSON 的 tags 字段只当「补全来源」：
+ * 正文里没有的标签补写进正文，这样导入后第一次编辑不会把它弄丢。
+ * （老写法直接用 raw.tags 建标签行，正文里却没有 #标签，
+ *   updateNote 一重新解析就全没了。）
+ */
+function mergeTagsIntoContent(rawContent, rawTags) {
+  const text = String(rawContent == null ? '' : rawContent)
+  if (!Array.isArray(rawTags) || !rawTags.length) return text
+  const present = parseTags(text)
+  const extra = []
+  for (const t of rawTags) {
+    const name = String(t == null ? '' : t).trim().replace(/^#/, '')
+    if (!name || present.includes(name) || extra.includes(name)) continue
+    if (!TAG_NAME_RE.test(name)) continue
+    extra.push(name)
+  }
+  if (!extra.length) return text
+  return text + ' ' + extra.map((t) => '#' + t).join(' ')
+}
+
 function importNotes(list) {
   const exists = db.prepare('SELECT 1 FROM notes WHERE id = ?')
   let added = 0
@@ -477,12 +498,13 @@ function importNotes(list) {
       }
       const createdAt = safeTs(raw.createdAt, Date.now())
       const updatedAt = safeTs(raw.updatedAt, createdAt)
-      const tags = Array.isArray(raw.tags) ? raw.tags.filter(Boolean) : []
+      const content = mergeTagsIntoContent(raw.content, raw.tags)
+      const tags = parseTags(content)
       db.prepare(
         'INSERT INTO notes (id, content, created_at, updated_at, deleted_at, pinned) VALUES (?,?,?,?,?,?)'
-      ).run(id, raw.content, createdAt, updatedAt, raw.deletedAt || null, raw.pinned ? 1 : 0)
+      ).run(id, content, createdAt, updatedAt, raw.deletedAt || null, raw.pinned ? 1 : 0)
       replaceTags(id, tags)
-      syncFts({ id, content: raw.content }, tags)
+      syncFts({ id, content }, tags)
       added++
     }
   })()
