@@ -105,56 +105,28 @@
             <!-- v-memo 和 v-for 在同一个元素上是官方支持的用法，
                  但 valid-v-memo 只记最近一个 v-for 祖先，遇到这里
                  「外层 template v-for + 内层 article v-for」会误报 -->
-            <article
+            <NoteCard
               v-for="n in g.items"
               :key="n.id"
               :data-id="n.id"
+              :note="n"
+              :editing="editingId === n.id"
+              :selected="isSelected(n.id)"
+              :active="activeId === n.id"
+              :selecting="selecting"
+              :markdown="config.markdown"
+              :html="mdHtml(n)"
+              :text="plain(n.content)"
+              :time="fmt(n.updatedAt)"
               v-memo="[n.id, n.updatedAt, n.pinned, editingId === n.id, isSelected(n.id), activeId === n.id, selecting, config.markdown]"
-              class="note"
-              :class="{
-                pinned: n.pinned,
-                editing: editingId === n.id,
-                selected: isSelected(n.id),
-                picking: selecting,
-                active: activeId === n.id
-              }"
               @click="onNoteClick(n)"
-            >
-              <template v-if="editingId !== n.id">
-                <div class="note-main">
-                  <span v-if="selecting" class="check" :class="{ on: isSelected(n.id) }"></span>
-                  <div v-if="config.markdown && !selecting" class="md-body" v-html="mdHtml(n)"></div>
-                  <p v-else class="content">{{ plain(n.content) }}</p>
-                </div>
-                <div class="note-foot">
-                  <span v-if="n.pinned" class="pin-dot" title="已置顶"></span>
-                  <span class="time">{{ fmt(n.updatedAt) }}</span>
-                  <div v-if="!selecting" class="actions">
-                    <button @click.stop="togglePin(n)">{{ n.pinned ? '取消置顶' : '置顶' }}</button>
-                    <button @click.stop="startEdit(n)">编辑</button>
-                    <button @click.stop="exportNote(n)">导出</button>
-                    <button class="danger" @click.stop="removeItem(n)">删除</button>
-                  </div>
-                </div>
-              </template>
-              <template v-else>
-                <textarea
-                  v-model="editDraft"
-                  class="input edit-input"
-                  rows="3"
-                  spellcheck="false"
-                  @keydown="onEditKey"
-                  @click.stop
-                ></textarea>
-                <div class="note-foot">
-                  <span class="hint">Ctrl+Enter 保存 · Esc 取消</span>
-                  <div class="actions always">
-                    <button @click.stop="cancelEdit">取消</button>
-                    <button class="primary" @click.stop="commitEdit(n)">保存</button>
-                  </div>
-                </div>
-              </template>
-            </article>
+              @pin="togglePin(n)"
+              @edit="startEdit(n)"
+              @export="exportNote(n)"
+              @remove="removeItem(n)"
+              @save="(text) => commitEdit(n, text)"
+              @cancel="cancelEdit"
+            />
           </template>
         </template>
         <p v-if="hasMore" class="more">还有更多，继续往下滚…</p>
@@ -306,6 +278,7 @@ import {
 import SettingsPanel from './components/SettingsPanel.vue'
 import TagManager from './components/TagManager.vue'
 import TrashView from './components/TrashView.vue'
+import NoteCard from './components/NoteCard.vue'
 import { buildGroups, fmtTime as fmt, stripTags } from './lib/text.mjs'
 import { normalizeAccent, normalizeDensity } from './lib/prefs.mjs'
 import { splitByQuery } from './lib/highlight.mjs'
@@ -328,7 +301,6 @@ const draft = ref('')
 const query = ref('')
 const activeTag = ref('')
 const editingId = ref(null)
-const editDraft = ref('')
 const composing = ref(false)
 const view = ref('list')
 const settingsOpen = ref(false)
@@ -901,36 +873,22 @@ function onNoteClick(n) {
 function startEdit(n) {
   if (selecting.value) return
   editingId.value = n.id
-  editDraft.value = n.content
 }
 
 function cancelEdit() {
   editingId.value = null
-  editDraft.value = ''
 }
 
-async function commitEdit(n) {
-  const text = editDraft.value.trim()
+async function commitEdit(n, raw) {
+  const text = String(raw == null ? '' : raw).trim()
   if (!text) {
-    // 原来这里直接 cancelEdit()，用户按「保存」等于「取消」，什么都没发生也没提示
+    // 用户按「保存」等于「取消」会以为存上了，这里必须说清
     showToast('内容不能为空，要删除请用「删除」')
     return
   }
   await updateNote(n.id, { content: text })
   cancelEdit()
   await refreshAll()
-}
-
-function onEditKey(e) {
-  if (e.key === 'Escape') {
-    e.stopPropagation()
-    cancelEdit()
-  }
-  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-    e.preventDefault()
-    const n = items.value.find((x) => x.id === editingId.value)
-    if (n) commitEdit(n)
-  }
 }
 
 /** 单条导出：只写正文，不套全量导出的表头 */
@@ -1317,33 +1275,12 @@ async function retryLoad() {
   border-color: var(--accent-line);
 }
 
-.input {
-  width: 100%;
-  background: transparent;
-  resize: none;
-  font-size: var(--content-size);
-  line-height: 1.65;
-  color: var(--text);
-  min-height: 46px;
-  max-height: 220px;
-  overflow-y: auto;
-}
-
-.input::placeholder {
-  color: var(--text-faint);
-}
-
 .composer-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-top: 6px;
   min-height: 26px;
-}
-
-.hint {
-  font-size: var(--caption);
-  color: var(--text-faint);
 }
 
 .save {
@@ -1533,154 +1470,6 @@ async function retryLoad() {
   font-size: 10.5px;
 }
 
-.note.active {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent-soft);
-}
-
-/* 搜索命中：用强调色的浅底，不改变字色，避免在暗色主题下刺眼 */
-.note :deep(mark.tv-hl) {
-  background: var(--accent-soft);
-  color: inherit;
-  border-radius: 3px;
-  padding: 0 1px;
-}
-
-.note {
-  padding: var(--note-pad-y) var(--note-pad-x);
-  background: var(--surface);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius);
-  transition: border-color 0.12s ease, background 0.12s ease;
-}
-
-.note:hover {
-  border-color: var(--border);
-}
-
-:root[data-theme='dark'] .note:not(.pinned):not(.selected):hover {
-  background: var(--surface-2);
-}
-
-.note.picking {
-  cursor: pointer;
-}
-
-.note.selected {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.note.pinned {
-  border-color: var(--pinned-border);
-  background: linear-gradient(180deg, var(--pinned-from), var(--surface));
-}
-
-.note.editing {
-  border-color: var(--accent-line);
-}
-
-.note-main {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-}
-
-.check {
-  flex: none;
-  width: 15px;
-  height: 15px;
-  margin-top: 3px;
-  border-radius: 4px;
-  border: 1px solid var(--border);
-  background: var(--bg);
-}
-
-.check.on {
-  background: var(--accent);
-  border-color: var(--accent);
-  position: relative;
-}
-
-.check.on::after {
-  content: '';
-  position: absolute;
-  left: 4px;
-  top: 1px;
-  width: 4px;
-  height: 8px;
-  border: solid #fff;
-  border-width: 0 1.5px 1.5px 0;
-  transform: rotate(42deg);
-}
-
-.content {
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-size: var(--content-size);
-  line-height: var(--note-leading);
-  color: var(--text-strong);
-}
-
-.note-foot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.pin-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-
-.time {
-  font-size: var(--caption);
-  color: var(--text-faint);
-  font-variant-numeric: tabular-nums;
-}
-
-.actions {
-  margin-left: auto;
-  display: flex;
-  gap: 2px;
-  opacity: 0;
-  transition: opacity 0.12s ease;
-}
-
-.note:hover .actions,
-.note.editing .actions,
-.actions.always {
-  opacity: 1;
-}
-
-.actions button {
-  padding: 2px 7px;
-  border-radius: 6px;
-  font-size: 11.5px;
-  color: var(--text-dim);
-  cursor: pointer;
-}
-
-.actions button:hover {
-  background: var(--surface-2);
-  color: var(--text);
-}
-
-.actions .danger:hover {
-  color: var(--danger);
-  background: transparent;
-}
-
-.actions .primary {
-  color: var(--accent-text);
-}
-
-.edit-input {
-  min-height: 64px;
-}
 
 .more {
   text-align: center;

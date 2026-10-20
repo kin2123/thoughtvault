@@ -202,6 +202,28 @@ body {
   background: var(--sel);
 }
 
+/* 通用输入框与提示文字：输入框在 App 与 NoteCard 里都要用，放全局 */
+.input {
+  width: 100%;
+  background: transparent;
+  resize: none;
+  font-size: var(--content-size);
+  line-height: 1.65;
+  color: var(--text);
+  min-height: 46px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.input::placeholder {
+  color: var(--text-faint);
+}
+
+.hint {
+  font-size: var(--caption);
+  color: var(--text-faint);
+}
+
 input,
 textarea,
 button {

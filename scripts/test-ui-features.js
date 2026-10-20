@@ -190,6 +190,38 @@ app.whenReady().then(async () => {
     JSON.stringify({ dropped: dropped.slice(0, 40), files: assetFiles })
   )
 
+  /* 7. 卡片拆分后，样式与编辑流程仍然正常 */
+  const cardStyle = await run(`
+    const note = document.querySelector('.note');
+    const cs = getComputedStyle(note);
+    return { padTop: cs.paddingTop, radius: cs.borderRadius, bg: cs.backgroundColor };
+  `)
+  check(
+    '卡片样式仍然生效',
+    cardStyle.padTop === '7px' && cardStyle.radius === '12px' && cardStyle.bg !== 'rgba(0, 0, 0, 0)',
+    JSON.stringify(cardStyle)
+  )
+
+  const enterEdit = await run(`
+    const note = document.querySelector('.note');
+    const btn = [...note.querySelectorAll('.actions button')].find(b => b.textContent.trim() === '编辑');
+    if (!btn) return { has: false };
+    btn.click();
+    await new Promise(r => setTimeout(r, 350));
+    const ta = document.querySelector('.note.editing textarea');
+    return { has: !!ta, value: ta ? ta.value : '' };
+  `)
+  check('进入编辑态带上原内容', enterEdit.has === true && enterEdit.value.length > 0, JSON.stringify(enterEdit).slice(0, 80))
+
+  await run(`
+    const ta = document.querySelector('.note.editing textarea');
+    ta.value = '改过的内容 #edited';
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }));
+    await new Promise(r => setTimeout(r, 800));
+  `)
+  check('Ctrl+Enter 能保存编辑', db.listNotes({}).some((n) => n.content.includes('改过的内容')), 'db ok')
+
   check('全程没有渲染层报错', errors.length === 0, errors.slice(0, 2).join(' | '))
 
   console.log(`\n合计 ${pass + fail} 项，通过 ${pass}，失败 ${fail}`)

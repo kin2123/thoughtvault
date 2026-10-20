@@ -141,7 +141,7 @@ npm run test:logic       # 31 项  展示逻辑：剥标签 / 时间格式 / 按
 npm run test:recovery    #  8 项  渲染进程崩溃后的自动重载限流
 npm run test:ipc-guard   # 22 项  IPC 入参收敛：limit 上限 / 非法排序 / id 与标签数量
 npm run test:maintenance # 10 项  周期维护：备份阈值 / 时钟回拨 / 自定义间隔
-npm run test:ui-features # 10 项  界面：高亮 / 批量撤销 / 回收站倒计时 / 导出 / 主题 / 拖拽
+npm run test:ui-features # 13 项  界面：高亮 / 批量撤销 / 回收站倒计时 / 导出 / 主题 / 拖拽 / 卡片编辑
 npm run test:groups      # 11 项  时间分组与键盘导航
 npm run test:paging      #  7 项  灌 300 条验分页与滚动续载
 npm run test:batch       #  5 项  多选批量删除（端到端：点勾选 → 点删除 → 查库）
@@ -269,7 +269,8 @@ src/
   api.js        桌面 / 浏览器 双实现，接口一致
   style.css     主题令牌 + Markdown 排版
   lib/text.mjs  剥标签 / 时间格式 / 按天分组（可在 Node 里直接测）
-  components/   SettingsPanel / TagManager / TrashView
+  components/   NoteCard / SettingsPanel / TagManager / TrashView
+  composables/  useToast / useSelection
 scripts/        10 套数据层测试 + 5 套界面测试 + 三个基准/工具
 ```
 
