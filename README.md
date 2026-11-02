@@ -125,11 +125,11 @@ logs/app.log   异常日志（超过 2MB 轮转成 app.log.1，只留一份）
 ## 测试
 
 17 套脚本，全部在真实 Electron 里跑（真窗口、真 SQLite、真文件系统），不是 mock。
-其中 10 套是纯数据/纯逻辑，无头环境也能跑：
+其中 10 套是纯数据 / 纯逻辑（199 项，无头环境也能跑），6 套界面（60 项），外加 smoke 13 项：
 
 ```bash
 npm test               # 先构建，再跑完 16 套并汇总（任一失败非零退出）
-npm run test:data      # 只跑不需要窗口的 10 套（CI 用这个）
+npm run test:data      # 只跑不需要窗口的 10 套（本机快速检查）
 
 npm run test:db          # 65 项  数据库层：中文搜索/标签/回收站/导入/恢复/迁移/schema 版本
 npm run test:datadir     # 17 项  数据目录搬迁：复制/切换/取消/回滚/不可写
@@ -150,6 +150,9 @@ npm run test:edge2       # 10 项  连续操作、空态、批量标签、图片
 npm run smoke            # 13 项  界面端到端 + 五张截图（不在 npm test 里，单独跑）
 npm run lint             # ESLint（essential 级别，只拦会变成 bug 的写法）
 ```
+
+`test-paging` 会短暂弹出窗口：续载用 `requestAnimationFrame` 节流，
+隐藏窗口收不到回调，必须让页面真正可见。
 
 这套断言抓出过 4 个真 bug，其中两个是致命的：**Vue 的响应式 Proxy 过不了 IPC 导致笔记根本存不进文件**、**批量删除同样因为 Proxy 静默失败**。这两个都是「界面看起来正常，重启/刷新才发现没了」——没有断言，肉眼永远发现不了。
 
@@ -188,52 +191,14 @@ SUM:   SCAN  notes USING COVERING INDEX idx_notes_deleted
 
 省掉一次往返，换来 O(匹配行) → O(全表)。这条现在连同实测数字写在 `electron/db.js` 的注释里。
 
-## v0.9.2 整改（2026-10）
+## 版本记录
 
-第二轮审视的结论是「数据层已经没有优化空间」，风险都在数据层之外。
-按主题拆开提交，每条都能单独回滚：
+### 结构整理（2026-11，v0.9.5 之后）
 
-| 提交 | 改了什么 | 为什么 |
-|---|---|---|
-| `fix(security)` | 拦截 `will-navigate` / `setWindowOpenHandler`，外链交给系统浏览器 | 原来点笔记里的链接会把整个窗口导航走，preload 在远程页重新注入，`window.vault` 的全部 IPC 就交给了那个页面 |
-| `fix(ui)` | 数据库打不开时显示错误态 | 原来会显示「还没有任何记录」，看着像数据丢了 |
-| `fix(db)` | `user_version` 只在升级时写，并补上迁移阶梯 | 原写法每次 `open()` 都覆写版本号，将来加字段会被旧版本改回去 |
-| `fix(db)` | 导入时把 `tags` 补写进正文 | 原来用 `raw.tags` 建标签行，正文里却没有 `#标签`，编辑一次就丢 |
-| `fix(db)` | 内容未变时不刷新 `updated_at` | 进编辑原样保存会把笔记顶到列表最前面 |
-| `perf(db)` | `bootstrap` 支持 `withTags: false` | `listTags` 是唯一线性退化的交互查询（25.6ms @5 万条），但只在写操作后才需要重算 |
-| `fix(ui)` | 列表刷新加请求序号、编辑清空给提示、粘贴图片 20MB 上限 | 三个「用户以为成功了其实没有」的场景 |
-| `refactor(tags)` | 标签只由 content 解析，浏览器兜底同步校验 | 前端传的 `tags` 参数是死的，两边语义已经分叉 |
-| `chore(test)` | `npm test` 统一入口 + 一致性测试 | 7 个脚本以前要逐个敲，容易漏跑 |
-
-规模实测（5 万条）：列表 0.32ms、写入 5ms 级、`quickCheck` 162ms、备份 121ms（都在首屏之后）。
-**唯一还在退化的交互查询是 `listTags`**（0.87ms → 25.58ms），已经用 `withTags` 按需跳过。
-
-### v0.9.3 续
-
-同一轮里继续往下挖的几处（都带实测或断言）：
-
-- **FTS 行改用 `notes.rowid` 寻址**：`note_id` 是 UNINDEXED 列，按它删会让 FTS5 全表扫描，
-  写路径每行都要「先删后插」，导入因此是 O(n²)。5 万条 **128s → 2.6s**，`updateNote` 也小降；
-  schema 升到 v2 并一次性重建索引（5 万条 604ms）
-- **VACUUM 的坑**：FTS 行用 `notes.rowid` 定位，而 VACUUM 会重排 rowid，
-  所以 `db.vacuum()` 内部固定跟着 `rebuildFts()`，两个动作不能拆开
-- **日志轮转**：`app.log` 超过 2MB 改名 `app.log.1`，只留一份
-- **崩溃自动恢复**：渲染进程异常退出后自动 reload，60 秒内最多两次（无边框窗口白屏没有别的自救手段）
-- **IPC 入参收敛**：`limit` 上限 5000、`sort` 白名单、`ids`/`tags` 数量上限
-- **维护工具**：托盘「压缩数据库」（VACUUM + 重建 FTS）、`npm run scan:assets` 只读列出未引用图片
-- **ESLint**（essential 级）接入，`npm run lint` 0 问题
-- **展示逻辑外移**：`src/lib/text.mjs`，可在 Node 里直接测，App.vue 少 70 行
-
-```bash
-npm run lint        # 0 问题
-npm run test:data   # 9 套 167 项
-```
-
-### 结构整理：把 App.vue 拆开
-
-- 卡片 `NoteCard.vue`，以及 `useToast` / `useSelection` / `useNotes` / `useGroups` / `useAppearance` 五个 composable
-- `App.vue` 只留流程编排：列表数据、时间分组、多选、主题各自独立，纯函数仍在 `lib/`
-- 无行为变化，`npm test` 16 套脚本全绿（数据层 199 项 + 界面层 60 项）
+- **结构**：`NoteCard.vue` 与 `useToast` / `useSelection` / `useNotes` / `useGroups` / `useAppearance` 五个 composable 各自独立；`App.vue` 1735 → 1584 行，只留流程编排
+- **构建**：`after-pack.js` 不再删除 `ffmpeg.dll` 等 Electron 运行时依赖——删了安装包无法启动
+- **测试**：分页用例改用可见窗口；续载用 `requestAnimationFrame` 节流，隐藏窗口收不到回调
+- **验证**：`npm run lint` 0 问题；`npm test` 16 套全绿（数据层 199 项 + 界面层 60 项）
 
 ### v0.9.5：单条导出与图片检查
 
@@ -253,6 +218,47 @@ npm run test:data   # 9 套 167 项
 
 数据层测试从 9 套 167 项增加到 **10 套 199 项**。
 CI 只跑 lint + 构建（不需要窗口）；数据层测试仍在本机跑。
+
+### v0.9.3：FTS 与写入路径
+
+同一轮里继续往下挖的几处（都带实测或断言）：
+
+- **FTS 行改用 `notes.rowid` 寻址**：`note_id` 是 UNINDEXED 列，按它删会让 FTS5 全表扫描，
+  写路径每行都要「先删后插」，导入因此是 O(n²)。5 万条 **128s → 2.6s**，`updateNote` 也小降；
+  schema 升到 v2 并一次性重建索引（5 万条 604ms）
+- **VACUUM 的坑**：FTS 行用 `notes.rowid` 定位，而 VACUUM 会重排 rowid，
+  所以 `db.vacuum()` 内部固定跟着 `rebuildFts()`，两个动作不能拆开
+- **日志轮转**：`app.log` 超过 2MB 改名 `app.log.1`，只留一份
+- **崩溃自动恢复**：渲染进程异常退出后自动 reload，60 秒内最多两次（无边框窗口白屏没有别的自救手段）
+- **IPC 入参收敛**：`limit` 上限 5000、`sort` 白名单、`ids`/`tags` 数量上限
+- **维护工具**：托盘「压缩数据库」（VACUUM + 重建 FTS）、`npm run scan:assets` 只读列出未引用图片
+- **ESLint**（essential 级）接入，`npm run lint` 0 问题
+- **展示逻辑外移**：`src/lib/text.mjs`，可在 Node 里直接测，App.vue 少 70 行
+
+```bash
+npm run lint        # 0 问题
+npm run test:data   # 10 套 199 项
+```
+
+### v0.9.2：安全与数据一致性（2026-10）
+
+第二轮审视的结论是「数据层已经没有优化空间」，风险都在数据层之外。
+按主题拆开提交，每条都能单独回滚：
+
+| 提交 | 改了什么 | 为什么 |
+|---|---|---|
+| `fix(security)` | 拦截 `will-navigate` / `setWindowOpenHandler`，外链交给系统浏览器 | 原来点笔记里的链接会把整个窗口导航走，preload 在远程页重新注入，`window.vault` 的全部 IPC 就交给了那个页面 |
+| `fix(ui)` | 数据库打不开时显示错误态 | 原来会显示「还没有任何记录」，看着像数据丢了 |
+| `fix(db)` | `user_version` 只在升级时写，并补上迁移阶梯 | 原写法每次 `open()` 都覆写版本号，将来加字段会被旧版本改回去 |
+| `fix(db)` | 导入时把 `tags` 补写进正文 | 原来用 `raw.tags` 建标签行，正文里却没有 `#标签`，编辑一次就丢 |
+| `fix(db)` | 内容未变时不刷新 `updated_at` | 进编辑原样保存会把笔记顶到列表最前面 |
+| `perf(db)` | `bootstrap` 支持 `withTags: false` | `listTags` 是唯一线性退化的交互查询（25.6ms @5 万条），但只在写操作后才需要重算 |
+| `fix(ui)` | 列表刷新加请求序号、编辑清空给提示、粘贴图片 20MB 上限 | 三个「用户以为成功了其实没有」的场景 |
+| `refactor(tags)` | 标签只由 content 解析，浏览器兜底同步校验 | 前端传的 `tags` 参数是死的，两边语义已经分叉 |
+| `chore(test)` | `npm test` 统一入口 + 一致性测试 | 7 个脚本以前要逐个敲，容易漏跑 |
+
+规模实测（5 万条）：列表 0.32ms、写入 5ms 级、`quickCheck` 162ms、备份 121ms（都在首屏之后）。
+**唯一还在退化的交互查询是 `listTags`**（0.87ms → 25.58ms），已经用 `withTags` 按需跳过。
 
 ## 目录结构
 
@@ -277,7 +283,7 @@ src/
   lib/text.mjs  剥标签 / 时间格式 / 按天分组（可在 Node 里直接测）
   components/   NoteCard / SettingsPanel / TagManager / TrashView
   composables/  useToast / useSelection / useNotes / useGroups / useAppearance
-scripts/        10 套数据层测试 + 6 套界面测试 + 三个基准/工具
+scripts/        10 套数据层测试 + 6 套界面测试 + bench / 截图 / 维护工具
 ```
 
 ## 已知边界
