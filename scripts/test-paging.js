@@ -50,6 +50,9 @@ app.whenReady().then(async () => {
     }
   })
   await win.loadFile(path.join(root, 'dist', 'index.html'))
+  // 续载用 requestAnimationFrame 节流，而隐藏窗口不会收到 rAF 回调：
+  // 窗口必须真正可见，否则第二次滚动永远等不到续载（会卡在 160 条）。
+  win.showInactive()
   await sleep(1600)
 
   const t0 = Date.now()
