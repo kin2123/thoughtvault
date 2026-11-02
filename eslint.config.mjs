@@ -9,7 +9,14 @@ import globals from 'globals'
 
 export default [
   {
-    ignores: ['dist/**', 'release/**', 'release-*/**', 'node_modules/**', '.workbuddy/**']
+    ignores: [
+      'dist/**',
+      'release/**',
+      'release-*/**',
+      'node_modules/**',
+      '.workbuddy/**',
+      '.acceptance/**'
+    ]
   },
 
   js.configs.recommended,

@@ -6,6 +6,7 @@ release*/
 .DS_Store
 Thumbs.db
 .workbuddy/
+.acceptance/
 
 # 内部规划/分析文档：只留本地，不发布到公开仓库
 产品定位.md
