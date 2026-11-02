@@ -248,13 +248,9 @@ import {
   exportFile,
   exportFileName,
   getConfig,
-  getStats,
   hideWindow,
   importJson,
   isDesktop,
-  bootstrapNotes,
-  listTags,
-  listTrash,
   loadDraft,
   notesToMarkdown,
   onFocusInput,
@@ -279,27 +275,21 @@ import SettingsPanel from './components/SettingsPanel.vue'
 import TagManager from './components/TagManager.vue'
 import TrashView from './components/TrashView.vue'
 import NoteCard from './components/NoteCard.vue'
-import { buildGroups, fmtTime as fmt, stripTags } from './lib/text.mjs'
-import { normalizeAccent, normalizeDensity } from './lib/prefs.mjs'
+import { fmtTime as fmt, stripTags } from './lib/text.mjs'
 import { splitByQuery } from './lib/highlight.mjs'
 import { useToast } from './composables/useToast.js'
 import { useSelection } from './composables/useSelection.js'
+import { useNotes } from './composables/useNotes.js'
+import { useGroups } from './composables/useGroups.js'
+import { useAppearance } from './composables/useAppearance.js'
 
-const PAGE_SIZE = 80
 // 图片要整个 buffer 走结构化克隆过 IPC，10MB 截图会带来 20MB+ 的峰值
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 const mdCache = new Map()
 
-const items = ref([])
-const trashItems = ref([])
-const tagList = ref([])
-const stats = ref({ active: 0, trash: 0 })
-
 const draft = ref('')
-const query = ref('')
-const activeTag = ref('')
 const editingId = ref(null)
 const composing = ref(false)
 const view = ref('list')
@@ -308,9 +298,6 @@ const tagManagerOpen = ref(false)
 
 const { selecting, selected, tagging, tagInput, isSelected, toggleSelect, toggleSelectMode } =
   useSelection()
-
-const limit = ref(PAGE_SIZE)
-const hasMore = ref(false)
 
 const config = ref({
   hotkeyActive: '',
@@ -329,6 +316,29 @@ const config = ref({
 
 const backupItems = ref([])
 const { toast, showToast, runToastAction } = useToast()
+
+// 列表数据、分组折叠、外观分别拆在 composables 里；
+// App.vue 留下的都是「动作编排」——增删改要串起多个刷新与提示。
+const {
+  items,
+  trashItems,
+  tagList,
+  stats,
+  query,
+  activeTag,
+  hasMore,
+  sortLabel,
+  refreshList,
+  refreshSide,
+  refreshAll,
+  resetPaging,
+  onListScroll,
+  pickTag,
+  cycleSort
+} = useNotes({ config, isTrashView: () => view.value === 'trash', showToast })
+const { groups, isCollapsed, toggleGroup, visibleItems } = useGroups(items, config)
+const { isDark, applyAppearance, toggleTheme } = useAppearance(config)
+
 // 首屏读不出来时的原因（数据库损坏、目录没权限、db 没打开）
 const loadError = ref('')
 const inputRef = ref(null)
@@ -340,10 +350,6 @@ let offFocusInput = () => {}
 let offOpenPanel = () => {}
 let draftTimer = null
 let searchTimer = null
-let mediaQuery = null
-// 滚动续载的两个闸门，见 onListScroll
-let loadingMore = false
-let scrollRafPending = false
 
 /* ---------- 生命周期 ---------- */
 
@@ -384,9 +390,6 @@ onMounted(async () => {
   window.addEventListener('tv-error', onGlobalError)
   window.addEventListener('dragover', onWindowDragOver)
   window.addEventListener('drop', onWindowDrop)
-
-  mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-  mediaQuery.addEventListener('change', applyAppearance)
 })
 
 onBeforeUnmount(() => {
@@ -398,37 +401,9 @@ onBeforeUnmount(() => {
   window.removeEventListener('drop', onWindowDrop)
   clearTimeout(draftTimer)
   clearTimeout(searchTimer)
-  if (mediaQuery) mediaQuery.removeEventListener('change', applyAppearance)
 })
 
-/* ---------- 外观 ---------- */
-
-const isDark = ref(true)
-
-function applyAppearance() {
-  const theme = config.value.theme || 'system'
-  const sysDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-  const dark = theme === 'dark' || (theme === 'system' && sysDark)
-  const root = document.documentElement
-  root.dataset.theme = dark ? 'dark' : 'light'
-  root.dataset.size = config.value.fontSize || 'm'
-  root.dataset.accent = normalizeAccent(config.value.accent)
-  root.dataset.density = normalizeDensity(config.value.density)
-  isDark.value = dark
-}
-
-/** 标题栏的一键切换：明确指定深/浅，不再跟随系统 */
-async function toggleTheme() {
-  const next = isDark.value ? 'light' : 'dark'
-  config.value = { ...config.value, theme: next }
-  applyAppearance()
-  await setConfig({ theme: next })
-}
-
-watch(
-  () => [config.value.theme, config.value.fontSize, config.value.accent, config.value.density],
-  () => applyAppearance()
-)
+/* ---------- 引导 ---------- */
 
 const showOnboarding = computed(() => isDesktop && config.value.onboarded === false)
 
@@ -437,112 +412,9 @@ async function dismissOnboarding() {
   await setConfig({ onboarded: true })
 }
 
-/* ---------- 数据刷新 ---------- */
-
-// 列表请求的序号：refreshList 之间是并发 IPC，回来的顺序不保证。
-// 快速输入时「学」的结果可能比「学习」晚到，把新结果覆盖成旧的。
-let listSeq = 0
-
-async function refreshList({ withTags = true } = {}) {
-  const seq = ++listSeq
-  // 一次 IPC 拿齐列表 + 标签 + 计数，省掉三次往返
-  const res = await bootstrapNotes({
-    query: query.value,
-    tag: activeTag.value,
-    sort: config.value.sort || 'updated',
-    limit: limit.value,
-    withTags
-  })
-  // 期间已经发起了更新的请求，这次的结果作废
-  if (seq !== listSeq) return
-  items.value = res.list
-  // 跳过标签统计时不要把已有的标签列表覆盖成 undefined
-  if (res.tags) tagList.value = res.tags
-  stats.value = res.stats
-  hasMore.value = res.list.length >= limit.value
-}
-
-async function refreshTrash() {
-  trashItems.value = await listTrash()
-}
-
-async function refreshSide() {
-  const [tags, st] = await Promise.all([listTags(), getStats()])
-  tagList.value = tags
-  stats.value = st
-  // 回收站列表只在回收站视图里才有意义，平时不拉
-  if (view.value === 'trash') await refreshTrash()
-}
-
-async function refreshAll() {
-  await refreshList()
-  if (view.value === 'trash') await refreshTrash()
-}
-
-function resetPaging() {
-  limit.value = PAGE_SIZE
-  // 换搜索词/换标签时要把闸门一起松开，否则上一次的在途标记会挡住新查询
-  loadingMore = false
-}
-
-// 滚动续载要挡住两件事：
-// ① refreshList 是异步的，await 期间同一个位置会继续收到 scroll 事件，
-//    每次加 80 会让 limit 一次跳到 240、400，然后触发一次超大的重渲染；
-// ② 读 scrollTop / clientHeight / scrollHeight 会强制布局刷新，
-//    不节流的话每个 scroll 事件都来一次。
-function onListScroll(e) {
-  if (!hasMore.value || loadingMore || scrollRafPending) return
-  const el = e.target
-  scrollRafPending = true
-  requestAnimationFrame(() => {
-    scrollRafPending = false
-    // 进 rAF 后重新判一次，期间状态可能已经变了
-    if (loadingMore || !hasMore.value) return
-    if (el.scrollTop + el.clientHeight < el.scrollHeight - 120) return
-    loadingMore = true
-    limit.value += PAGE_SIZE
-    // 续载只影响列表，标签统计没必要跟着重算
-    refreshList({ withTags: false }).finally(() => {
-      loadingMore = false
-    })
-  })
-}
-
-/* ---------- 时间分组 ---------- */
-
-const DEFAULT_OPEN_DAYS = 7
-const collapsedKeys = ref([])
-const expandedKeys = ref([])
-
-// 分组算法在 src/lib/text.js（可在 Node 里测），这里只保留折叠状态
-const groups = computed(() =>
-  buildGroups(items.value, { sort: config.value.sort || 'updated', now: Date.now() })
-)
-
-/** 手动展开优先，其次手动收起，都不是则按「7 天内默认展开」 */
-function isCollapsed(g) {
-  if (expandedKeys.value.includes(g.key)) return false
-  if (collapsedKeys.value.includes(g.key)) return true
-  return Date.now() - g.ts > DEFAULT_OPEN_DAYS * 86400000
-}
-
-function toggleGroup(g) {
-  if (isCollapsed(g)) {
-    collapsedKeys.value = collapsedKeys.value.filter((k) => k !== g.key)
-    if (!expandedKeys.value.includes(g.key)) expandedKeys.value = expandedKeys.value.concat(g.key)
-  } else {
-    expandedKeys.value = expandedKeys.value.filter((k) => k !== g.key)
-    if (!collapsedKeys.value.includes(g.key)) collapsedKeys.value = collapsedKeys.value.concat(g.key)
-  }
-}
-
 /* ---------- 键盘导航 ---------- */
 
 const activeId = ref('')
-
-const visibleItems = computed(() =>
-  groups.value.filter((g) => !isCollapsed(g)).flatMap((g) => g.items)
-)
 
 function moveActive(delta) {
   const list = visibleItems.value
@@ -650,7 +522,7 @@ const draftHint = computed(() => {
 
 // 标签由 main 侧从 content 解析（浏览器预览由 api.js 负责），
 // 渲染层只负责把标签从展示文本里去掉，不再产出标签数组。
-// stripTags / fmt / buildGroups 都在 src/lib/text.js，这里只保留带缓存的渲染。
+// stripTags / fmt 在 src/lib/text.mjs，分组在 useGroups，这里只保留带缓存的渲染。
 
 function plain(text) {
   return stripTags(text)
@@ -898,28 +770,6 @@ async function exportNote(n) {
   else if (res && !res.canceled) showToast(res.error || '导出失败')
 }
 
-/* ---------- 筛选与排序 ---------- */
-
-function pickTag(name) {
-  activeTag.value = name
-  resetPaging()
-  refreshList({ withTags: false })
-}
-
-const SORTS = ['updated', 'created', 'length']
-const SORT_LABELS = { updated: '最近更新', created: '最新创建', length: '篇幅最长' }
-const sortLabel = computed(() => SORT_LABELS[config.value.sort] || SORT_LABELS.updated)
-
-async function cycleSort() {
-  const cur = config.value.sort || 'updated'
-  const next = SORTS[(SORTS.indexOf(cur) + 1) % SORTS.length]
-  config.value = { ...config.value, sort: next }
-  await setConfig({ sort: next })
-  resetPaging()
-  await refreshList({ withTags: false })
-  showToast('排序：' + SORT_LABELS[next])
-}
-
 /* ---------- 多选与批量 ---------- */
 
 function openTagInput() {
@@ -999,7 +849,6 @@ function toggleTrash() {
     // 进回收站前先退出多选，否则批量操作会作用在看不见的条目上
     if (selecting.value) toggleSelectMode()
     view.value = 'trash'
-    refreshTrash()
     refreshSide()
   }
 }

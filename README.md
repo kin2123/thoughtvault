@@ -10,7 +10,7 @@
 ![electron](https://img.shields.io/badge/Electron-33-47848F?style=flat-square&logo=electron&logoColor=white)
 ![vue](https://img.shields.io/badge/Vue-3-42B883?style=flat-square&logo=vuedotjs&logoColor=white)
 ![sqlite](https://img.shields.io/badge/SQLite-FTS5-003B57?style=flat-square&logo=sqlite&logoColor=white)
-![tests](https://img.shields.io/badge/tests-98%20assertions-3fb950?style=flat-square)
+![tests](https://img.shields.io/badge/tests-259%20assertions-3fb950?style=flat-square)
 ![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 
 </div>
@@ -229,6 +229,12 @@ npm run lint        # 0 问题
 npm run test:data   # 9 套 167 项
 ```
 
+### 结构整理：把 App.vue 拆开
+
+- 卡片 `NoteCard.vue`，以及 `useToast` / `useSelection` / `useNotes` / `useGroups` / `useAppearance` 五个 composable
+- `App.vue` 只留流程编排：列表数据、时间分组、多选、主题各自独立，纯函数仍在 `lib/`
+- 无行为变化，`npm test` 16 套脚本全绿（数据层 199 项 + 界面层 60 项）
+
 ### v0.9.5：单条导出与图片检查
 
 - 卡片操作里加「导出」，只写这一条的正文
@@ -265,13 +271,13 @@ electron/
   ipc-guard.js  IPC 入参收敛（limit / ids / tags 上限）
   assets-scan.js 图片引用提取与孤儿判定（只读）
 src/
-  App.vue       捕获框、列表、Markdown、多选、排序、主题、引导
+  App.vue       流程编排：捕获框、列表、Markdown、批量、设置、引导
   api.js        桌面 / 浏览器 双实现，接口一致
   style.css     主题令牌 + Markdown 排版
   lib/text.mjs  剥标签 / 时间格式 / 按天分组（可在 Node 里直接测）
   components/   NoteCard / SettingsPanel / TagManager / TrashView
-  composables/  useToast / useSelection
-scripts/        10 套数据层测试 + 5 套界面测试 + 三个基准/工具
+  composables/  useToast / useSelection / useNotes / useGroups / useAppearance
+scripts/        10 套数据层测试 + 6 套界面测试 + 三个基准/工具
 ```
 
 ## 已知边界
